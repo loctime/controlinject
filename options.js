@@ -14,6 +14,68 @@ const tgActivoEl = document.getElementById("tg-activo");
 const tgSilencioDesdeEl = document.getElementById("tg-silencio-desde");
 const tgSilencioHastaEl = document.getElementById("tg-silencio-hasta");
 
+// ── Cuenta Firebase ──────────────────────────────────────────
+
+async function actualizarUILogin() {
+  const r = await chrome.runtime.sendMessage({ action: "firebase:status" });
+  const user = r?.ok ? r.data : null;
+  document.getElementById("login-form").style.display = user ? "none" : "block";
+  document.getElementById("login-info").style.display = user ? "block" : "none";
+  if (user) {
+    document.getElementById("fb-user-label").textContent = `✓ ${user.displayName || user.email}`;
+  }
+}
+
+document.getElementById("btn-login-email").addEventListener("click", async () => {
+  const email = document.getElementById("fb-email").value.trim();
+  const password = document.getElementById("fb-password").value;
+  if (!email || !password) { mostrar("Completá email y contraseña.", "err"); return; }
+  try {
+    mostrar("Ingresando…", "");
+    const r = await chrome.runtime.sendMessage({ action: "firebase:login", payload: { email, password } });
+    if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesión.");
+    mostrar("Sesión iniciada. Descargando datos de la nube…", "ok");
+    await actualizarUILogin();
+    setTimeout(() => cargarConfig(), 1200);
+  } catch (e) {
+    mostrar(`Error: ${e.message}`, "err");
+  }
+});
+
+document.getElementById("btn-login-google").addEventListener("click", async () => {
+  try {
+    mostrar("Abriendo ventana de Google…", "");
+    const r = await chrome.runtime.sendMessage({ action: "firebase:loginGoogle" });
+    if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesión con Google.");
+    mostrar("Sesión iniciada. Descargando datos de la nube…", "ok");
+    await actualizarUILogin();
+    setTimeout(() => cargarConfig(), 1200);
+  } catch (e) {
+    mostrar(`Error: ${e.message}`, "err");
+  }
+});
+
+document.getElementById("btn-logout").addEventListener("click", async () => {
+  await chrome.runtime.sendMessage({ action: "firebase:logout" });
+  mostrar("Sesión cerrada.", "ok");
+  await actualizarUILogin();
+});
+
+document.getElementById("btn-sync").addEventListener("click", async () => {
+  try {
+    document.getElementById("sync-status").textContent = "Sincronizando…";
+    const r = await chrome.runtime.sendMessage({ action: "firebase:syncUp" });
+    if (!r?.ok) throw new Error(r?.error || "Error al sincronizar.");
+    document.getElementById("sync-status").textContent =
+      `Subido: config + ${r.data.patrones} patrón(es). ${new Date().toLocaleTimeString()}`;
+    mostrar("Sincronizado con la nube.", "ok");
+  } catch (e) {
+    mostrar(`Error al sincronizar: ${e.message}`, "err");
+  }
+});
+
+// ── fin Cuenta Firebase ───────────────────────────────────────
+
 function mostrar(msg, tipo) {
   estadoEl.textContent = msg;
   estadoEl.className = tipo || "";
@@ -228,3 +290,4 @@ document.getElementById("importar-mapeo-input").addEventListener("change", async
 });
 
 cargarConfig();
+actualizarUILogin();

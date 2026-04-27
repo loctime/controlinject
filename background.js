@@ -25,6 +25,21 @@ const KEY_TG_UPDATE_OFFSET = "matesin_tg_update_offset";
 const ALARMA_TG = "matesin_alarma_telegram";
 const ALARMA_TG_POLL = "matesin_alarma_tg_poll";
 
+// ── Firebase ─────────────────────────────────────────────────
+const FB_API_KEY = "AIzaSyDyyhN6_k9vxQE2nPY45Euruikm65DI88I";
+const FB_PROJECT_ID = "control-inject";
+const GOOGLE_CLIENT_ID = "1012115598233-09tcoet0isgte4q94etijp66lfq3f7kq.apps.googleusercontent.com";
+
+const KEY_FB_ID_TOKEN = "fb_id_token";
+const KEY_FB_REFRESH_TOKEN = "fb_refresh_token";
+const KEY_FB_UID = "fb_uid";
+const KEY_FB_EMAIL = "fb_email";
+const KEY_FB_DISPLAY_NAME = "fb_display_name";
+
+const FB_AUTH_URL = `https://identitytoolkit.googleapis.com/v1/accounts`;
+const FB_TOKEN_URL = `https://securetoken.googleapis.com/v1/token`;
+const FB_FS_URL = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT_ID}/databases/(default)/documents`;
+
 // Tope práctico para descarga de archivos por Bot API de Telegram (~20 MB).
 const TG_MAX_PDF_BYTES = 20 * 1024 * 1024;
 
@@ -54,6 +69,252 @@ const TIPOS_DOCUMENTO = [
   { id: "desconocido", etiqueta: "", desc: "No coincide con ninguno de los tipos anteriores" }
 ];
 
+// ── Firebase helpers ─────────────────────────────────────────
+
+async function fbFetch(url, options = {}) {
+  const res = await fetch(url, options);
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error?.message || `Firebase error ${res.status}`);
+  return json;
+}
+
+async function fbRefreshToken(refreshToken) {
+  const res = await fbFetch(`${FB_TOKEN_URL}?key=${FB_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ grant_type: "refresh_token", refresh_token: refreshToken })
+  });
+  const idToken = res.id_token;
+  const newRefresh = res.refresh_token;
+  await chrome.storage.local.set({ [KEY_FB_ID_TOKEN]: idToken, [KEY_FB_REFRESH_TOKEN]: newRefresh });
+  return idToken;
+}
+
+async function fbGetToken() {
+  const data = await chrome.storage.local.get([KEY_FB_REFRESH_TOKEN]);
+  if (!data[KEY_FB_REFRESH_TOKEN]) return null;
+  return await fbRefreshToken(data[KEY_FB_REFRESH_TOKEN]);
+}
+
+async function fbLoginEmail(email, password) {
+  const data = await fbFetch(`${FB_AUTH_URL}:signInWithPassword?key=${FB_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, returnSecureToken: true })
+  });
+  await chrome.storage.local.set({
+    [KEY_FB_ID_TOKEN]: data.idToken,
+    [KEY_FB_REFRESH_TOKEN]: data.refreshToken,
+    [KEY_FB_UID]: data.localId,
+    [KEY_FB_EMAIL]: data.email,
+    [KEY_FB_DISPLAY_NAME]: data.displayName || data.email
+  });
+  return { uid: data.localId, email: data.email, displayName: data.displayName || data.email };
+}
+
+async function fbLoginGoogle() {
+  const redirectUri = `https://${chrome.runtime.id}.chromiumapp.org/`;
+  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authUrl.searchParams.set("client_id", GOOGLE_CLIENT_ID);
+  authUrl.searchParams.set("redirect_uri", redirectUri);
+  authUrl.searchParams.set("response_type", "token");
+  authUrl.searchParams.set("scope", "email profile openid");
+
+  const responseUrl = await new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow({ url: authUrl.toString(), interactive: true }, (url) => {
+      if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+      else resolve(url);
+    });
+  });
+
+  const params = new URLSearchParams(new URL(responseUrl).hash.substring(1));
+  const accessToken = params.get("access_token");
+  if (!accessToken) throw new Error("No se obtuvo access_token de Google.");
+
+  const data = await fbFetch(`${FB_AUTH_URL}:signInWithIdp?key=${FB_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requestUri: redirectUri,
+      postBody: `access_token=${accessToken}&providerId=google.com`,
+      returnSecureToken: true,
+      returnIdpCredential: true
+    })
+  });
+  await chrome.storage.local.set({
+    [KEY_FB_ID_TOKEN]: data.idToken,
+    [KEY_FB_REFRESH_TOKEN]: data.refreshToken,
+    [KEY_FB_UID]: data.localId,
+    [KEY_FB_EMAIL]: data.email,
+    [KEY_FB_DISPLAY_NAME]: data.displayName || data.email
+  });
+  return { uid: data.localId, email: data.email, displayName: data.displayName || data.email };
+}
+
+async function fbLogout() {
+  await chrome.storage.local.remove([
+    KEY_FB_ID_TOKEN, KEY_FB_REFRESH_TOKEN, KEY_FB_UID, KEY_FB_EMAIL, KEY_FB_DISPLAY_NAME
+  ]);
+}
+
+async function fbGetStatus() {
+  const data = await chrome.storage.local.get([KEY_FB_UID, KEY_FB_EMAIL, KEY_FB_DISPLAY_NAME, KEY_FB_REFRESH_TOKEN]);
+  if (!data[KEY_FB_UID] || !data[KEY_FB_REFRESH_TOKEN]) return null;
+  return { uid: data[KEY_FB_UID], email: data[KEY_FB_EMAIL], displayName: data[KEY_FB_DISPLAY_NAME] };
+}
+
+// ── Firestore helpers ─────────────────────────────────────────
+
+function fsToValue(val) {
+  if (val === null || val === undefined) return { nullValue: null };
+  if (typeof val === "boolean") return { booleanValue: val };
+  if (typeof val === "number") return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+  if (typeof val === "string") return { stringValue: val };
+  if (Array.isArray(val)) return { arrayValue: { values: val.map(fsToValue) } };
+  if (typeof val === "object") return { mapValue: { fields: Object.fromEntries(Object.entries(val).map(([k, v]) => [k, fsToValue(v)])) } };
+  return { stringValue: String(val) };
+}
+
+function fsFromValue(v) {
+  if (!v) return null;
+  if ("nullValue" in v) return null;
+  if ("booleanValue" in v) return v.booleanValue;
+  if ("integerValue" in v) return parseInt(v.integerValue, 10);
+  if ("doubleValue" in v) return v.doubleValue;
+  if ("stringValue" in v) return v.stringValue;
+  if ("arrayValue" in v) return (v.arrayValue.values || []).map(fsFromValue);
+  if ("mapValue" in v) return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, val]) => [k, fsFromValue(val)]));
+  return null;
+}
+
+function fsDocToObj(doc) {
+  if (!doc?.fields) return {};
+  return Object.fromEntries(Object.entries(doc.fields).map(([k, v]) => [k, fsFromValue(v)]));
+}
+
+async function fsWriteDoc(path, data) {
+  const idToken = await fbGetToken();
+  if (!idToken) throw new Error("No hay sesión activa.");
+  const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, fsToValue(v)]));
+  const fieldPaths = Object.keys(data).join("&updateMask.fieldPaths=");
+  await fbFetch(`${FB_FS_URL}/${path}?updateMask.fieldPaths=${fieldPaths}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ fields })
+  });
+}
+
+async function fsReadDoc(path) {
+  const idToken = await fbGetToken();
+  if (!idToken) return null;
+  try {
+    const doc = await fbFetch(`${FB_FS_URL}/${path}`, {
+      headers: { Authorization: `Bearer ${idToken}` }
+    });
+    return fsDocToObj(doc);
+  } catch (e) {
+    if (e.message?.includes("NOT_FOUND")) return null;
+    throw e;
+  }
+}
+
+async function fsListCollection(collectionPath) {
+  const idToken = await fbGetToken();
+  if (!idToken) return [];
+  try {
+    const res = await fbFetch(`${FB_FS_URL}/${collectionPath}`, {
+      headers: { Authorization: `Bearer ${idToken}` }
+    });
+    return (res.documents || []).map(doc => fsDocToObj(doc));
+  } catch (e) {
+    return [];
+  }
+}
+
+async function fbSyncConfigUp() {
+  const user = await fbGetStatus();
+  if (!user) return;
+  const data = await chrome.storage.local.get([
+    KEY_API_KEY, KEY_MODELO,
+    KEY_CD_USER, KEY_CD_PASS,
+    KEY_TG_TOKEN, KEY_TG_CHATID, KEY_TG_DIAS_PERSONAL, KEY_TG_DIAS_VEHICULOS,
+    KEY_TG_FRECUENCIA, KEY_TG_ACTIVO, KEY_TG_SILENCIO_DESDE, KEY_TG_SILENCIO_HASTA,
+    KEY_MAPEOS
+  ]);
+  const config = {
+    apiKey: data[KEY_API_KEY] || "",
+    modelo: data[KEY_MODELO] || MODELO_DEFAULT,
+    cdUser: data[KEY_CD_USER] || "",
+    cdPass: data[KEY_CD_PASS] || "",
+    tgToken: data[KEY_TG_TOKEN] || "",
+    tgChatId: data[KEY_TG_CHATID] || "",
+    tgDiasPersonal: data[KEY_TG_DIAS_PERSONAL] || 7,
+    tgDiasVehiculos: data[KEY_TG_DIAS_VEHICULOS] || 15,
+    tgFrecuencia: data[KEY_TG_FRECUENCIA] || 180,
+    tgActivo: !!data[KEY_TG_ACTIVO],
+    tgSilencioDesde: data[KEY_TG_SILENCIO_DESDE] || "22:00",
+    tgSilencioHasta: data[KEY_TG_SILENCIO_HASTA] || "08:00",
+    mapeosAprendidos: data[KEY_MAPEOS] || {}
+  };
+  await fsWriteDoc(`users/${user.uid}/config`, config);
+}
+
+async function fbSyncConfigDown() {
+  const user = await fbGetStatus();
+  if (!user) return 0;
+  const config = await fsReadDoc(`users/${user.uid}/config`);
+  if (!config) return 0;
+  const toSave = {};
+  if (config.apiKey) toSave[KEY_API_KEY] = config.apiKey;
+  if (config.modelo) toSave[KEY_MODELO] = config.modelo;
+  if (config.cdUser) toSave[KEY_CD_USER] = config.cdUser;
+  if (config.cdPass) toSave[KEY_CD_PASS] = config.cdPass;
+  if (config.tgToken) toSave[KEY_TG_TOKEN] = config.tgToken;
+  if (config.tgChatId) toSave[KEY_TG_CHATID] = config.tgChatId;
+  if (config.tgDiasPersonal) toSave[KEY_TG_DIAS_PERSONAL] = config.tgDiasPersonal;
+  if (config.tgDiasVehiculos) toSave[KEY_TG_DIAS_VEHICULOS] = config.tgDiasVehiculos;
+  if (config.tgFrecuencia) toSave[KEY_TG_FRECUENCIA] = config.tgFrecuencia;
+  if (typeof config.tgActivo === "boolean") toSave[KEY_TG_ACTIVO] = config.tgActivo;
+  if (config.tgSilencioDesde) toSave[KEY_TG_SILENCIO_DESDE] = config.tgSilencioDesde;
+  if (config.tgSilencioHasta) toSave[KEY_TG_SILENCIO_HASTA] = config.tgSilencioHasta;
+  if (config.mapeosAprendidos) toSave[KEY_MAPEOS] = config.mapeosAprendidos;
+  await chrome.storage.local.set(toSave);
+  return Object.keys(toSave).length;
+}
+
+async function fbSyncPatronesUp() {
+  const user = await fbGetStatus();
+  if (!user) return 0;
+  const data = await chrome.storage.local.get(KEY_PATRONES_SABANA);
+  const patrones = data[KEY_PATRONES_SABANA] || [];
+  for (const patron of patrones) {
+    const nombre = patron.nombre;
+    if (!nombre) continue;
+    const docData = {
+      nombre,
+      bloquesModal: patron.bloquesModal || [],
+      firmaTipos: patron.firmaTipos || [],
+      bloques: patron.bloques || [],
+      firma: patron.firma || [],
+      actualizadoEl: Date.now()
+    };
+    const docId = nombre.replace(/[\/\.]/g, "_");
+    await fsWriteDoc(`users/${user.uid}/patrones/${docId}`, docData);
+  }
+  return patrones.length;
+}
+
+async function fbSyncPatronesDown() {
+  const user = await fbGetStatus();
+  if (!user) return 0;
+  const docs = await fsListCollection(`users/${user.uid}/patrones`);
+  if (!docs.length) return 0;
+  await chrome.storage.local.set({ [KEY_PATRONES_SABANA]: docs });
+  return docs.length;
+}
+
+// ── fin Firebase ──────────────────────────────────────────────
+
 function normalizar(texto) {
   return (texto || "")
     .toLowerCase()
@@ -73,6 +334,43 @@ chrome.runtime.onMessage.addListener((mensaje, _sender, sendResponse) => {
 async function manejarMensaje(mensaje) {
   const accion = mensaje?.action;
   if (!accion) throw new Error("Mensaje sin acción.");
+
+  if (accion === "firebase:login") {
+    const { email, password } = mensaje?.payload || {};
+    const user = await fbLoginEmail(email, password);
+    Promise.all([fbSyncConfigDown(), fbSyncPatronesDown()]).catch(() => {});
+    return user;
+  }
+
+  if (accion === "firebase:loginGoogle") {
+    const user = await fbLoginGoogle();
+    Promise.all([fbSyncConfigDown(), fbSyncPatronesDown()]).catch(() => {});
+    return user;
+  }
+
+  if (accion === "firebase:logout") {
+    await fbLogout();
+    return { ok: true };
+  }
+
+  if (accion === "firebase:status") {
+    return await fbGetStatus();
+  }
+
+  if (accion === "firebase:syncUp") {
+    const user = await fbGetStatus();
+    if (!user) throw new Error("No hay sesión activa.");
+    const nPatrones = await fbSyncPatronesUp();
+    await fbSyncConfigUp();
+    return { config: true, patrones: nPatrones };
+  }
+
+  if (accion === "firebase:syncDown") {
+    const user = await fbGetStatus();
+    if (!user) throw new Error("No hay sesión activa.");
+    const [nConfig, nPatrones] = await Promise.all([fbSyncConfigDown(), fbSyncPatronesDown()]);
+    return { config: nConfig, patrones: nPatrones };
+  }
 
   if (accion === "storage:getMemory") {
     const data = await chrome.storage.local.get(KEY_MAPEOS);
@@ -130,6 +428,7 @@ async function manejarMensaje(mensaje) {
     if (idx >= 0) arr[idx] = entry;
     else arr.push(entry);
     await chrome.storage.local.set({ [KEY_PATRONES_SABANA]: arr });
+    fbSyncPatronesUp().catch(() => {});
     return { saved: true };
   }
 
@@ -180,6 +479,7 @@ async function manejarMensaje(mensaje) {
     const apiKey = String(mensaje?.payload?.apiKey || "").trim();
     const modelo = String(mensaje?.payload?.modelo || MODELO_DEFAULT).trim();
     await chrome.storage.local.set({ [KEY_API_KEY]: apiKey, [KEY_MODELO]: modelo });
+    fbSyncConfigUp().catch(() => {});
     return { saved: true };
   }
 
@@ -223,6 +523,7 @@ async function manejarMensaje(mensaje) {
     const user = String(mensaje?.payload?.user || "").trim();
     const pass = String(mensaje?.payload?.pass || "");
     await chrome.storage.local.set({ [KEY_CD_USER]: user, [KEY_CD_PASS]: pass });
+    fbSyncConfigUp().catch(() => {});
     return { saved: true };
   }
 
@@ -247,6 +548,7 @@ async function manejarMensaje(mensaje) {
     } catch (e) {
       console.warn("[MAU] No se pudieron registrar los comandos:", e);
     }
+    fbSyncConfigUp().catch(() => {});
     return { saved: true };
   }
 

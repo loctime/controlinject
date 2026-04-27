@@ -55,6 +55,40 @@
     <h1 style="margin:0;">DocAutomatización</h1>
   </div>
 
+  <!-- ── CUENTA ──────────────────────────────────────── -->
+  <div id="seccion-login">
+    <h2 style="margin-top:0;">Cuenta</h2>
+    <p class="hint">Guardá tus datos en la nube para que no se pierdan si limpiás Chrome o cambiás de PC.</p>
+
+    <div id="login-form">
+      <div class="row">
+        <label for="fb-email">Email</label>
+        <input id="fb-email" type="text" placeholder="empresa@mail.com" autocomplete="email" />
+      </div>
+      <div class="row">
+        <label for="fb-password">Contraseña</label>
+        <input id="fb-password" type="password" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+      <div class="acciones">
+        <button id="btn-login-email" type="button">Ingresar</button>
+        <button id="btn-login-google" type="button" class="alt">🔑 Entrar con Google</button>
+      </div>
+    </div>
+
+    <div id="login-info" style="display:none;">
+      <div class="row" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+        <span id="fb-user-label" style="font-size:13px;color:#34d399;font-weight:600;"></span>
+        <div style="display:flex;gap:8px;">
+          <button id="btn-sync" type="button" class="alt">☁ Sincronizar</button>
+          <button id="btn-logout" type="button" class="alt">Cerrar sesión</button>
+        </div>
+      </div>
+      <div id="sync-status" class="hint" style="margin-top:4px;"></div>
+    </div>
+  </div>
+  <hr style="border-color:rgba(148,163,184,0.1);margin:24px 0;" />
+  <!-- ── FIN CUENTA ──────────────────────────────────── -->
+
   <h2>Inteligencia artificial (Claude)</h2>
   <p class="hint">La extensión usa la API de Claude para mirar cada página del PDF sábana y decir qué tipo de documento es. Necesitás una API Key de Anthropic.</p>
 
