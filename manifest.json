@@ -3,16 +3,8 @@
   "name": "DocAutomatización",
   "description": "Automatiza la carga de documentos pendientes en controldocumentario.com",
   "version": "1.0.0",
-  "permissions": ["activeTab", "storage", "scripting", "alarms", "tabs", "identity"],
-  "host_permissions": [
-    "https://controldocumentario.com/*",
-    "https://api.anthropic.com/*",
-    "https://api.telegram.org/*",
-    "https://identitytoolkit.googleapis.com/*",
-    "https://securetoken.googleapis.com/*",
-    "https://firestore.googleapis.com/*",
-    "https://accounts.google.com/*"
-  ],
+  "permissions": ["activeTab", "storage", "scripting", "alarms", "tabs"],
+  "host_permissions": ["https://controldocumentario.com/*", "https://api.anthropic.com/*", "https://api.telegram.org/*"],
   "background": {
     "service_worker": "background.js"
   },
