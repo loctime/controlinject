@@ -30,6 +30,15 @@ const TG_MAX_PDF_BYTES = 20 * 1024 * 1024;
 
 const MODELO_DEFAULT = "claude-haiku-4-5-20251001";
 
+// ===================== FIREBASE =====================
+const FB_API_KEY = "AIzaSyDyyhN6_k9vxQE2nPY45Euruikm65DI88I";
+const FB_PROJECT_ID = "control-inject";
+const FB_AUTH_URL = "https://identitytoolkit.googleapis.com/v1/accounts";
+const FB_TOKEN_URL = "https://securetoken.googleapis.com/v1/token";
+const FB_FS_URL = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT_ID}/databases/(default)/documents`;
+const GOOGLE_CLIENT_ID = "1012115598233-09tcoet0isgte4q94etijp66lfq3f7kq.apps.googleusercontent.com";
+const KEY_FB_AUTH = "matesin_fb_auth";
+
 const TIPOS_DOCUMENTO = [
   { id: "f931", etiqueta: "931", desc: "Formulario ARCA 931 — tiene el logo de ARCA y un recuadro grande con el número '931' impreso. Dice 'Declaración Jurada en Pesos con centavos S.U.S.S.' Tiene tablas con secciones 'I - REGIMEN NACIONAL DE SEGURIDAD SOCIAL', 'II - REGIMEN NACIONAL DE OBRAS SOCIALES', 'VI - LEY DE RIESGOS DE TRABAJO', 'VIII - MONTOS QUE SE INGRESAN'. Es el formulario de declaración jurada, NO un ticket de banco." },
   { id: "nomina_f931", etiqueta: "Nomina 931", desc: "Nómina del F 931: listado de empleados asociados al F931 (tabla con nombres/CUILes de la declaración)" },
@@ -63,6 +72,285 @@ function normalizar(texto) {
     .trim();
 }
 
+async function fbFetch(url, init = {}) {
+  const res = await fetch(url, init);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error?.message || `Firebase error ${res.status}`);
+  return json;
+}
+
+async function fbGetAuth() {
+  const data = await chrome.storage.local.get(KEY_FB_AUTH);
+  return data[KEY_FB_AUTH] || null;
+}
+
+async function fbSetAuth(auth) {
+  await chrome.storage.local.set({ [KEY_FB_AUTH]: auth });
+}
+
+async function fbClearAuth() {
+  await chrome.storage.local.remove(KEY_FB_AUTH);
+}
+
+async function fbRefreshIdToken(refreshToken) {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken
+  });
+  const data = await fbFetch(`${FB_TOKEN_URL}?key=${FB_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString()
+  });
+  return {
+    idToken: data.id_token,
+    refreshToken: data.refresh_token || refreshToken,
+    uid: data.user_id,
+    email: null
+  };
+}
+
+async function fbGetValidAuth() {
+  const auth = await fbGetAuth();
+  if (!auth) return null;
+  const now = Date.now();
+  if (!auth.expiresAt || auth.expiresAt <= now + 60000) {
+    if (!auth.refreshToken) return null;
+    const refreshed = await fbRefreshIdToken(auth.refreshToken);
+    const merged = {
+      ...auth,
+      ...refreshed,
+      expiresAt: now + 55 * 60 * 1000
+    };
+    await fbSetAuth(merged);
+    return merged;
+  }
+  return auth;
+}
+
+async function fbLoginEmail(email, password) {
+  const data = await fbFetch(`${FB_AUTH_URL}:signInWithPassword?key=${FB_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, returnSecureToken: true })
+  });
+  const auth = {
+    uid: data.localId,
+    email: data.email || email,
+    idToken: data.idToken,
+    refreshToken: data.refreshToken,
+    provider: "password",
+    expiresAt: Date.now() + (parseInt(data.expiresIn, 10) || 3600) * 1000
+  };
+  await fbSetAuth(auth);
+  return { uid: auth.uid, email: auth.email, provider: auth.provider };
+}
+
+async function fbLoginGoogle() {
+  const redirectUri = chrome.identity.getRedirectURL();
+  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  authUrl.searchParams.set("client_id", GOOGLE_CLIENT_ID);
+  authUrl.searchParams.set("redirect_uri", redirectUri);
+  authUrl.searchParams.set("response_type", "token");
+  authUrl.searchParams.set("scope", "openid email profile");
+  authUrl.searchParams.set("prompt", "select_account");
+
+  const responseUrl = await new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow({ url: authUrl.toString(), interactive: true }, (url) => {
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+      if (!url) return reject(new Error("No se recibió respuesta de Google."));
+      resolve(url);
+    });
+  });
+
+  const hash = responseUrl.split("#")[1] || "";
+  const params = new URLSearchParams(hash);
+  const accessToken = params.get("access_token");
+  if (!accessToken) throw new Error("No se obtuvo access_token de Google.");
+
+  const data = await fbFetch(`${FB_AUTH_URL}:signInWithIdp?key=${FB_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      postBody: `access_token=${encodeURIComponent(accessToken)}&providerId=google.com`,
+      requestUri: redirectUri,
+      returnSecureToken: true,
+      returnIdpCredential: true
+    })
+  });
+
+  const auth = {
+    uid: data.localId,
+    email: data.email || "",
+    idToken: data.idToken,
+    refreshToken: data.refreshToken,
+    provider: "google.com",
+    expiresAt: Date.now() + (parseInt(data.expiresIn, 10) || 3600) * 1000
+  };
+  await fbSetAuth(auth);
+  return { uid: auth.uid, email: auth.email, provider: auth.provider };
+}
+
+function fsToValue(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === "string") return { stringValue: v };
+  if (typeof v === "boolean") return { booleanValue: v };
+  if (typeof v === "number") {
+    if (Number.isInteger(v)) return { integerValue: String(v) };
+    return { doubleValue: v };
+  }
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(fsToValue) } };
+  if (typeof v === "object") {
+    const fields = {};
+    Object.entries(v).forEach(([k, val]) => { fields[k] = fsToValue(val); });
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(v) };
+}
+
+function fsFromValue(v) {
+  if (!v || typeof v !== "object") return null;
+  if (Object.prototype.hasOwnProperty.call(v, "stringValue")) return v.stringValue;
+  if (Object.prototype.hasOwnProperty.call(v, "booleanValue")) return v.booleanValue;
+  if (Object.prototype.hasOwnProperty.call(v, "integerValue")) return parseInt(v.integerValue, 10);
+  if (Object.prototype.hasOwnProperty.call(v, "doubleValue")) return v.doubleValue;
+  if (Object.prototype.hasOwnProperty.call(v, "nullValue")) return null;
+  if (v.arrayValue) return (v.arrayValue.values || []).map(fsFromValue);
+  if (v.mapValue) {
+    const out = {};
+    Object.entries(v.mapValue.fields || {}).forEach(([k, val]) => { out[k] = fsFromValue(val); });
+    return out;
+  }
+  return null;
+}
+
+function fsFromDoc(doc) {
+  const out = {};
+  Object.entries(doc?.fields || {}).forEach(([k, val]) => { out[k] = fsFromValue(val); });
+  return out;
+}
+
+async function fsSetDoc(path, payload, idToken) {
+  const url = `${FB_FS_URL}/${path}`;
+  return await fbFetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, fsToValue(v)])) })
+  });
+}
+
+async function fsGetDoc(path, idToken) {
+  const url = `${FB_FS_URL}/${path}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${idToken}` } });
+  if (res.status === 404) return null;
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error?.message || `Firestore error ${res.status}`);
+  return fsFromDoc(json);
+}
+
+async function fsListCollection(path, idToken) {
+  const url = `${FB_FS_URL}/${path}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${idToken}` } });
+  if (res.status === 404) return [];
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error?.message || `Firestore error ${res.status}`);
+  return (json.documents || []).map((d) => {
+    const data = fsFromDoc(d);
+    const id = (d.name || "").split("/").pop();
+    return { id, ...data };
+  });
+}
+
+function fbSafeDocId(value) {
+  return String(value || "").replace(/[/.#?[\]]/g, "_").slice(0, 150);
+}
+
+async function fbSyncConfigUp() {
+  const auth = await fbGetValidAuth();
+  if (!auth?.idToken || !auth.uid) throw new Error("No hay sesión Firebase activa.");
+
+  const local = await chrome.storage.local.get([
+    KEY_API_KEY, KEY_MODELO, KEY_CD_USER, KEY_CD_PASS, KEY_TG_TOKEN, KEY_TG_CHATID,
+    KEY_TG_DIAS_PERSONAL, KEY_TG_DIAS_VEHICULOS, KEY_TG_FRECUENCIA, KEY_TG_ACTIVO,
+    KEY_TG_SILENCIO_DESDE, KEY_TG_SILENCIO_HASTA, KEY_MAPEOS, KEY_PATRONES_SABANA
+  ]);
+
+  await fsSetDoc(`users/${auth.uid}/config`, {
+    apiKey: local[KEY_API_KEY] || "",
+    modelo: local[KEY_MODELO] || MODELO_DEFAULT,
+    cdUser: local[KEY_CD_USER] || "",
+    cdPass: local[KEY_CD_PASS] || "",
+    tgToken: local[KEY_TG_TOKEN] || "",
+    tgChatId: local[KEY_TG_CHATID] || "",
+    tgDiasPersonal: local[KEY_TG_DIAS_PERSONAL] || 7,
+    tgDiasVehiculos: local[KEY_TG_DIAS_VEHICULOS] || 15,
+    tgFrecuencia: local[KEY_TG_FRECUENCIA] || 180,
+    tgActivo: !!local[KEY_TG_ACTIVO],
+    tgSilencioDesde: local[KEY_TG_SILENCIO_DESDE] || "22:00",
+    tgSilencioHasta: local[KEY_TG_SILENCIO_HASTA] || "08:00",
+    mapeosAprendidos: local[KEY_MAPEOS] || {},
+    updatedAtMs: Date.now()
+  }, auth.idToken);
+
+  const patrones = Array.isArray(local[KEY_PATRONES_SABANA]) ? local[KEY_PATRONES_SABANA] : [];
+  await Promise.all(patrones.map(async (p) => {
+    const docId = fbSafeDocId(p.nombre || `patron_${Date.now()}`);
+    await fsSetDoc(`users/${auth.uid}/patrones/${docId}`, {
+      nombre: p.nombre || "",
+      bloquesModal: Array.isArray(p.bloquesModal) ? p.bloquesModal : [],
+      firmaTipos: Array.isArray(p.firmaTipos) ? p.firmaTipos : [],
+      bloques: Array.isArray(p.bloques) ? p.bloques : null,
+      firma: Array.isArray(p.firma) ? p.firma : null,
+      totalPaginas: p.totalPaginas || null,
+      updatedAtMs: p.updatedAt || Date.now()
+    }, auth.idToken);
+  }));
+
+  return { ok: true, uid: auth.uid, patrones: patrones.length };
+}
+
+async function fbSyncConfigDown() {
+  const auth = await fbGetValidAuth();
+  if (!auth?.idToken || !auth.uid) throw new Error("No hay sesión Firebase activa.");
+
+  const config = await fsGetDoc(`users/${auth.uid}/config`, auth.idToken);
+  if (config) {
+    await chrome.storage.local.set({
+      [KEY_API_KEY]: config.apiKey || "",
+      [KEY_MODELO]: config.modelo || MODELO_DEFAULT,
+      [KEY_CD_USER]: config.cdUser || "",
+      [KEY_CD_PASS]: config.cdPass || "",
+      [KEY_TG_TOKEN]: config.tgToken || "",
+      [KEY_TG_CHATID]: config.tgChatId || "",
+      [KEY_TG_DIAS_PERSONAL]: config.tgDiasPersonal || 7,
+      [KEY_TG_DIAS_VEHICULOS]: config.tgDiasVehiculos || 15,
+      [KEY_TG_FRECUENCIA]: config.tgFrecuencia || 180,
+      [KEY_TG_ACTIVO]: !!config.tgActivo,
+      [KEY_TG_SILENCIO_DESDE]: config.tgSilencioDesde || "22:00",
+      [KEY_TG_SILENCIO_HASTA]: config.tgSilencioHasta || "08:00",
+      [KEY_MAPEOS]: config.mapeosAprendidos || {}
+    });
+  }
+
+  const patrones = await fsListCollection(`users/${auth.uid}/patrones`, auth.idToken);
+  if (patrones.length) {
+    await chrome.storage.local.set({
+      [KEY_PATRONES_SABANA]: patrones.map((p) => ({
+        nombre: p.nombre || p.id,
+        bloquesModal: Array.isArray(p.bloquesModal) ? p.bloquesModal : [],
+        firmaTipos: Array.isArray(p.firmaTipos) ? p.firmaTipos : [],
+        bloques: Array.isArray(p.bloques) ? p.bloques : undefined,
+        firma: Array.isArray(p.firma) ? p.firma : undefined,
+        totalPaginas: p.totalPaginas || undefined,
+        updatedAt: p.updatedAtMs || Date.now()
+      }))
+    });
+  }
+
+  try { await tgReprogramarAlarma(); } catch (_) {}
+  return { ok: true, uid: auth.uid, patrones: patrones.length };
+}
+
 chrome.runtime.onMessage.addListener((mensaje, _sender, sendResponse) => {
   manejarMensaje(mensaje)
     .then((data) => sendResponse({ ok: true, data }))
@@ -82,6 +370,7 @@ async function manejarMensaje(mensaje) {
   if (accion === "storage:setMemory") {
     const memoria = mensaje?.payload || {};
     await chrome.storage.local.set({ [KEY_MAPEOS]: memoria });
+    fbSyncConfigUp().catch(() => {});
     return { saved: true };
   }
 
@@ -93,6 +382,7 @@ async function manejarMensaje(mensaje) {
     const memoria = data[KEY_MAPEOS] || {};
     memoria[normalizar(nombreArchivo)] = requerimiento;
     await chrome.storage.local.set({ [KEY_MAPEOS]: memoria });
+    fbSyncConfigUp().catch(() => {});
     return { saved: true };
   }
 
@@ -130,6 +420,7 @@ async function manejarMensaje(mensaje) {
     if (idx >= 0) arr[idx] = entry;
     else arr.push(entry);
     await chrome.storage.local.set({ [KEY_PATRONES_SABANA]: arr });
+    fbSyncConfigUp().catch(() => {});
     return { saved: true };
   }
 
@@ -137,6 +428,7 @@ async function manejarMensaje(mensaje) {
     const lista = mensaje?.payload;
     if (!Array.isArray(lista)) throw new Error("Se esperaba un array de patrones.");
     await chrome.storage.local.set({ [KEY_PATRONES_SABANA]: lista });
+    fbSyncConfigUp().catch(() => {});
     return { saved: true };
   }
 
@@ -180,6 +472,7 @@ async function manejarMensaje(mensaje) {
     const apiKey = String(mensaje?.payload?.apiKey || "").trim();
     const modelo = String(mensaje?.payload?.modelo || MODELO_DEFAULT).trim();
     await chrome.storage.local.set({ [KEY_API_KEY]: apiKey, [KEY_MODELO]: modelo });
+    fbSyncConfigUp().catch(() => {});
     return { saved: true };
   }
 
@@ -223,6 +516,7 @@ async function manejarMensaje(mensaje) {
     const user = String(mensaje?.payload?.user || "").trim();
     const pass = String(mensaje?.payload?.pass || "");
     await chrome.storage.local.set({ [KEY_CD_USER]: user, [KEY_CD_PASS]: pass });
+    fbSyncConfigUp().catch(() => {});
     return { saved: true };
   }
 
@@ -247,7 +541,42 @@ async function manejarMensaje(mensaje) {
     } catch (e) {
       console.warn("[MAU] No se pudieron registrar los comandos:", e);
     }
+    fbSyncConfigUp().catch(() => {});
     return { saved: true };
+  }
+
+  if (accion === "firebase:status") {
+    const auth = await fbGetValidAuth().catch(() => null);
+    if (!auth?.uid) return { user: null };
+    return { user: { uid: auth.uid, email: auth.email || "", provider: auth.provider || "" } };
+  }
+
+  if (accion === "firebase:login") {
+    const email = String(mensaje?.payload?.email || "").trim();
+    const password = String(mensaje?.payload?.password || "");
+    if (!email || !password) throw new Error("Falta email o contraseña.");
+    const user = await fbLoginEmail(email, password);
+    try { await fbSyncConfigDown(); } catch (_) {}
+    return { user };
+  }
+
+  if (accion === "firebase:loginGoogle") {
+    const user = await fbLoginGoogle();
+    try { await fbSyncConfigDown(); } catch (_) {}
+    return { user };
+  }
+
+  if (accion === "firebase:logout") {
+    await fbClearAuth();
+    return { ok: true };
+  }
+
+  if (accion === "firebase:syncUp") {
+    return await fbSyncConfigUp();
+  }
+
+  if (accion === "firebase:syncDown") {
+    return await fbSyncConfigDown();
   }
 
   if (accion === "tg:probar") {

@@ -13,13 +13,33 @@ const tgFrecuenciaEl = document.getElementById("tg-frecuencia");
 const tgActivoEl = document.getElementById("tg-activo");
 const tgSilencioDesdeEl = document.getElementById("tg-silencio-desde");
 const tgSilencioHastaEl = document.getElementById("tg-silencio-hasta");
+const fbEmailEl = document.getElementById("fb-email");
+const fbPasswordEl = document.getElementById("fb-password");
+const fbLoginFormEl = document.getElementById("login-form");
+const fbLoginInfoEl = document.getElementById("login-info");
+const fbUserLabelEl = document.getElementById("fb-user-label");
 
 function mostrar(msg, tipo) {
   estadoEl.textContent = msg;
   estadoEl.className = tipo || "";
 }
 
+async function actualizarUILogin() {
+  try {
+    const r = await chrome.runtime.sendMessage({ action: "firebase:status" });
+    const user = r?.ok ? r.data?.user : null;
+    fbLoginFormEl.style.display = user ? "none" : "block";
+    fbLoginInfoEl.style.display = user ? "block" : "none";
+    fbUserLabelEl.textContent = user?.email || user?.uid || "-";
+  } catch (_) {
+    fbLoginFormEl.style.display = "block";
+    fbLoginInfoEl.style.display = "none";
+    fbUserLabelEl.textContent = "-";
+  }
+}
+
 async function cargarConfig() {
+  await actualizarUILogin();
   try {
     const response = await chrome.runtime.sendMessage({ action: "storage:getApiKey" });
     if (response?.ok) {
@@ -56,6 +76,67 @@ async function cargarConfig() {
     // Silencioso: si todavía no existe la config, queda vacío.
   }
 }
+
+document.getElementById("btn-login-email").addEventListener("click", async () => {
+  try {
+    const email = fbEmailEl.value.trim();
+    const password = fbPasswordEl.value;
+    if (!email || !password) throw new Error("Completá email y contraseña.");
+    mostrar("Iniciando sesiÃ³nâ€¦", "");
+    const r = await chrome.runtime.sendMessage({ action: "firebase:login", payload: { email, password } });
+    if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesiÃ³n.");
+    await actualizarUILogin();
+    mostrar("SesiÃ³n iniciada y datos sincronizados desde la nube.", "ok");
+  } catch (e) {
+    mostrar(`Error: ${e.message}`, "err");
+  }
+});
+
+document.getElementById("btn-login-google").addEventListener("click", async () => {
+  try {
+    mostrar("Abriendo login de Googleâ€¦", "");
+    const r = await chrome.runtime.sendMessage({ action: "firebase:loginGoogle" });
+    if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesiÃ³n con Google.");
+    await actualizarUILogin();
+    mostrar("SesiÃ³n Google iniciada y datos sincronizados desde la nube.", "ok");
+  } catch (e) {
+    mostrar(`Error: ${e.message}`, "err");
+  }
+});
+
+document.getElementById("btn-logout").addEventListener("click", async () => {
+  try {
+    const r = await chrome.runtime.sendMessage({ action: "firebase:logout" });
+    if (!r?.ok) throw new Error(r?.error || "No se pudo cerrar sesiÃ³n.");
+    await actualizarUILogin();
+    mostrar("SesiÃ³n cerrada.", "ok");
+  } catch (e) {
+    mostrar(`Error: ${e.message}`, "err");
+  }
+});
+
+document.getElementById("btn-sync-up").addEventListener("click", async () => {
+  try {
+    mostrar("Subiendo configuraciÃ³n a Firestoreâ€¦", "");
+    const r = await chrome.runtime.sendMessage({ action: "firebase:syncUp" });
+    if (!r?.ok) throw new Error(r?.error || "No se pudo subir.");
+    mostrar(`Subida completa. Patrones sincronizados: ${r.data?.patrones ?? 0}.`, "ok");
+  } catch (e) {
+    mostrar(`Error: ${e.message}`, "err");
+  }
+});
+
+document.getElementById("btn-sync-down").addEventListener("click", async () => {
+  try {
+    mostrar("Trayendo configuraciÃ³n desde Firestoreâ€¦", "");
+    const r = await chrome.runtime.sendMessage({ action: "firebase:syncDown" });
+    if (!r?.ok) throw new Error(r?.error || "No se pudo traer.");
+    await cargarConfig();
+    mostrar(`Descarga completa. Patrones sincronizados: ${r.data?.patrones ?? 0}.`, "ok");
+  } catch (e) {
+    mostrar(`Error: ${e.message}`, "err");
+  }
+});
 
 document.getElementById("guardar-api").addEventListener("click", async () => {
   try {

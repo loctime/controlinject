@@ -55,6 +55,31 @@
     <h1 style="margin:0;">DocAutomatización</h1>
   </div>
 
+  <h2>Cuenta y sincronizaciÃ³n</h2>
+  <p class="hint">Cada empresa usa su cuenta privada. Al iniciar sesiÃ³n, tu configuraciÃ³n y mapeos se sincronizan con Firestore.</p>
+  <div id="login-form">
+    <div class="row">
+      <label for="fb-email">Email</label>
+      <input id="fb-email" type="text" placeholder="empresa@dominio.com" autocomplete="off" />
+    </div>
+    <div class="row">
+      <label for="fb-password">ContraseÃ±a</label>
+      <input id="fb-password" type="password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" autocomplete="new-password" />
+    </div>
+    <div class="acciones">
+      <button id="btn-login-email" type="button">Ingresar</button>
+      <button id="btn-login-google" type="button" class="alt">Ingresar con Google</button>
+    </div>
+  </div>
+  <div id="login-info" style="display:none;">
+    <div class="hint">SesiÃ³n activa: <b id="fb-user-label">-</b></div>
+    <div class="acciones">
+      <button id="btn-sync-down" type="button" class="alt">Traer de nube</button>
+      <button id="btn-sync-up" type="button" class="alt">Subir a nube</button>
+      <button id="btn-logout" type="button" class="alt">Cerrar sesiÃ³n</button>
+    </div>
+  </div>
+
   <h2>Inteligencia artificial (Claude)</h2>
   <p class="hint">La extensión usa la API de Claude para mirar cada página del PDF sábana y decir qué tipo de documento es. Necesitás una API Key de Anthropic.</p>
 
