@@ -68,6 +68,7 @@
     </div>
     <div class="acciones">
       <button id="btn-login-email" type="button">Ingresar</button>
+      <button id="btn-register-email" type="button" class="alt">Registrarse</button>
       <button id="btn-login-google" type="button" class="alt">Ingresar con Google</button>
     </div>
   </div>
@@ -87,6 +88,12 @@
     <label for="apikey">API Key de Anthropic</label>
     <input id="apikey" type="password" placeholder="sk-ant-..." />
     <div class="hint">Se guarda solo en tu Chrome (storage local). No se envía a ningún otro lado. Sacala en <b>console.anthropic.com</b> → API Keys.</div>
+  </div>
+
+  <div class="row">
+    <label for="ai-proxy-url">Proxy IA (recomendado)</label>
+    <input id="ai-proxy-url" type="text" placeholder="https://tu-servicio.run.app/anthropic/messages" autocomplete="off" />
+    <div class="hint">Si lo configurÃ¡s, la extensiÃ³n usa tu backend y no necesitÃ¡s API Key por cada usuario.</div>
   </div>
 
   <div class="row">

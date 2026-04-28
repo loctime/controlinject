@@ -1,5 +1,6 @@
 const estadoEl = document.getElementById("estado");
 const apikeyEl = document.getElementById("apikey");
+const aiProxyUrlEl = document.getElementById("ai-proxy-url");
 const modeloEl = document.getElementById("modelo");
 
 const cdUserEl = document.getElementById("cd-user");
@@ -44,6 +45,7 @@ async function cargarConfig() {
     const response = await chrome.runtime.sendMessage({ action: "storage:getApiKey" });
     if (response?.ok) {
       apikeyEl.value = response.data.apiKey || "";
+      aiProxyUrlEl.value = response.data.proxyUrl || "";
       if (response.data.modelo) modeloEl.value = response.data.modelo;
     }
   } catch (e) {
@@ -87,6 +89,22 @@ document.getElementById("btn-login-email").addEventListener("click", async () =>
     if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesiÃ³n.");
     await actualizarUILogin();
     mostrar("SesiÃ³n iniciada y datos sincronizados desde la nube.", "ok");
+  } catch (e) {
+    mostrar(`Error: ${e.message}`, "err");
+  }
+});
+
+document.getElementById("btn-register-email").addEventListener("click", async () => {
+  try {
+    const email = fbEmailEl.value.trim();
+    const password = fbPasswordEl.value;
+    if (!email || !password) throw new Error("Completá email y contraseña.");
+    if (password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
+    mostrar("Creando cuenta…", "");
+    const r = await chrome.runtime.sendMessage({ action: "firebase:register", payload: { email, password } });
+    if (!r?.ok) throw new Error(r?.error || "No se pudo crear la cuenta.");
+    await actualizarUILogin();
+    mostrar("Cuenta creada y sesión iniciada.", "ok");
   } catch (e) {
     mostrar(`Error: ${e.message}`, "err");
   }
@@ -141,10 +159,11 @@ document.getElementById("btn-sync-down").addEventListener("click", async () => {
 document.getElementById("guardar-api").addEventListener("click", async () => {
   try {
     const apiKey = apikeyEl.value.trim();
+    const proxyUrl = aiProxyUrlEl.value.trim();
     const modelo = modeloEl.value;
     const response = await chrome.runtime.sendMessage({
       action: "storage:setApiKey",
-      payload: { apiKey, modelo }
+      payload: { apiKey, proxyUrl, modelo }
     });
     if (!response?.ok) throw new Error(response?.error || "No se pudo guardar.");
     mostrar("API Key guardada correctamente.", "ok");

@@ -6,6 +6,7 @@ const KEY_MAPEOS = "matesin_mapeos_aprendidos";
 const KEY_PATRONES_SABANA = "matesin_patrones_sabana";
 const KEY_API_KEY = "matesin_anthropic_api_key";
 const KEY_MODELO = "matesin_anthropic_modelo";
+const KEY_AI_PROXY_URL = "matesin_ai_proxy_url";
 
 const KEY_CD_USER = "matesin_cd_user";
 const KEY_CD_PASS = "matesin_cd_pass";
@@ -146,6 +147,24 @@ async function fbLoginEmail(email, password) {
   return { uid: auth.uid, email: auth.email, provider: auth.provider };
 }
 
+async function fbRegisterEmail(email, password) {
+  const data = await fbFetch(`${FB_AUTH_URL}:signUp?key=${FB_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, returnSecureToken: true })
+  });
+  const auth = {
+    uid: data.localId,
+    email: data.email || email,
+    idToken: data.idToken,
+    refreshToken: data.refreshToken,
+    provider: "password",
+    expiresAt: Date.now() + (parseInt(data.expiresIn, 10) || 3600) * 1000
+  };
+  await fbSetAuth(auth);
+  return { uid: auth.uid, email: auth.email, provider: auth.provider };
+}
+
 async function fbLoginGoogle() {
   const redirectUri = chrome.identity.getRedirectURL();
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
@@ -270,7 +289,7 @@ async function fbSyncConfigUp() {
   if (!auth?.idToken || !auth.uid) throw new Error("No hay sesión Firebase activa.");
 
   const local = await chrome.storage.local.get([
-    KEY_API_KEY, KEY_MODELO, KEY_CD_USER, KEY_CD_PASS, KEY_TG_TOKEN, KEY_TG_CHATID,
+    KEY_API_KEY, KEY_MODELO, KEY_AI_PROXY_URL, KEY_CD_USER, KEY_CD_PASS, KEY_TG_TOKEN, KEY_TG_CHATID,
     KEY_TG_DIAS_PERSONAL, KEY_TG_DIAS_VEHICULOS, KEY_TG_FRECUENCIA, KEY_TG_ACTIVO,
     KEY_TG_SILENCIO_DESDE, KEY_TG_SILENCIO_HASTA, KEY_MAPEOS, KEY_PATRONES_SABANA
   ]);
@@ -278,6 +297,7 @@ async function fbSyncConfigUp() {
   await fsSetDoc(`users/${auth.uid}/config`, {
     apiKey: local[KEY_API_KEY] || "",
     modelo: local[KEY_MODELO] || MODELO_DEFAULT,
+    aiProxyUrl: local[KEY_AI_PROXY_URL] || "",
     cdUser: local[KEY_CD_USER] || "",
     cdPass: local[KEY_CD_PASS] || "",
     tgToken: local[KEY_TG_TOKEN] || "",
@@ -318,6 +338,7 @@ async function fbSyncConfigDown() {
     await chrome.storage.local.set({
       [KEY_API_KEY]: config.apiKey || "",
       [KEY_MODELO]: config.modelo || MODELO_DEFAULT,
+      [KEY_AI_PROXY_URL]: config.aiProxyUrl || "",
       [KEY_CD_USER]: config.cdUser || "",
       [KEY_CD_PASS]: config.cdPass || "",
       [KEY_TG_TOKEN]: config.tgToken || "",
@@ -461,17 +482,19 @@ async function manejarMensaje(mensaje) {
   }
 
   if (accion === "storage:getApiKey") {
-    const data = await chrome.storage.local.get([KEY_API_KEY, KEY_MODELO]);
+    const data = await chrome.storage.local.get([KEY_API_KEY, KEY_MODELO, KEY_AI_PROXY_URL]);
     return {
       apiKey: data[KEY_API_KEY] || "",
-      modelo: data[KEY_MODELO] || MODELO_DEFAULT
+      modelo: data[KEY_MODELO] || MODELO_DEFAULT,
+      proxyUrl: data[KEY_AI_PROXY_URL] || ""
     };
   }
 
   if (accion === "storage:setApiKey") {
     const apiKey = String(mensaje?.payload?.apiKey || "").trim();
     const modelo = String(mensaje?.payload?.modelo || MODELO_DEFAULT).trim();
-    await chrome.storage.local.set({ [KEY_API_KEY]: apiKey, [KEY_MODELO]: modelo });
+    const proxyUrl = String(mensaje?.payload?.proxyUrl || "").trim();
+    await chrome.storage.local.set({ [KEY_API_KEY]: apiKey, [KEY_MODELO]: modelo, [KEY_AI_PROXY_URL]: proxyUrl });
     fbSyncConfigUp().catch(() => {});
     return { saved: true };
   }
@@ -556,6 +579,16 @@ async function manejarMensaje(mensaje) {
     const password = String(mensaje?.payload?.password || "");
     if (!email || !password) throw new Error("Falta email o contraseña.");
     const user = await fbLoginEmail(email, password);
+    try { await fbSyncConfigDown(); } catch (_) {}
+    return { user };
+  }
+
+  if (accion === "firebase:register") {
+    const email = String(mensaje?.payload?.email || "").trim();
+    const password = String(mensaje?.payload?.password || "");
+    if (!email || !password) throw new Error("Falta email o contraseña.");
+    if (password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
+    const user = await fbRegisterEmail(email, password);
     try { await fbSyncConfigDown(); } catch (_) {}
     return { user };
   }
@@ -1732,7 +1765,7 @@ async function compararPaginasConReferencia(nuevasPaginas, referencia) {
     || (referencia?.imagenes?.length > 0);
   if (!nuevasPaginas?.length || !referencia?.bloques?.length || !tieneImagenes) return null;
 
-  const { apiKey, modelo } = await obtenerApiKeyYModelo();
+  const { modelo } = await obtenerIAConfig();
 
   // Obtener TODAS las imágenes de referencia por bloque (una por cada página del bloque)
   const bloquesRef = referencia.bloques.map((b) => {
@@ -1815,23 +1848,7 @@ Respondé SOLO JSON válido, sin texto extra:
 }`
   });
 
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify({ model: modelo, max_tokens: 2500, messages: [{ role: "user", content }] })
-  });
-
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => "");
-    throw new Error(`Claude (comparar imágenes) ${resp.status}: ${errText.slice(0, 200)}`);
-  }
-
-  const json = await resp.json();
+  const json = await llamarClaudeMessages({ model: modelo, max_tokens: 2500, messages: [{ role: "user", content }] }, "Claude (comparar imagenes)");
   const textoResp = (json?.content?.[0]?.text || "").trim();
   console.log(`[MAU] Respuesta Claude (${textoResp.length} chars):`, textoResp.slice(0, 800));
 
@@ -1993,7 +2010,7 @@ function tgRemapearPaginas(patron, paginasClasificadas) {
 async function tgMatchearPatronConClaude(paginasClasificadas, patrones) {
   if (!patrones || !patrones.length) return null;
 
-  const { apiKey, modelo } = await obtenerApiKeyYModelo();
+  const { modelo } = await obtenerIAConfig();
 
   // Resumen de las páginas actuales
   const resumenPaginas = paginasClasificadas.map(p => {
@@ -2056,21 +2073,7 @@ Si patron_match es null, devolvé bloques: [].`;
     messages: [{ role: "user", content: [{ type: "text", text: prompt }] }]
   };
 
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify(body)
-  });
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => "");
-    throw new Error(`Claude (match patrón) ${resp.status}: ${errText.slice(0, 200)}`);
-  }
-  const json = await resp.json();
+  const json = await llamarClaudeMessages(body, "Claude (match patron)");
   const textoRespuesta = (json?.content?.[0]?.text || "").trim();
 
   let parsed = null;
@@ -2233,7 +2236,7 @@ async function tgBajarArchivo(token, fileId) {
  * Devuelve un arreglo: [{ pagina, id, etiqueta, apellido, nombre, cuil, patente, periodo }, ...]
  */
 async function clasificarSabanaConClaude(base64Pdf) {
-  const { apiKey, modelo } = await obtenerApiKeyYModelo();
+  const { modelo } = await obtenerIAConfig();
   const prompt = `Te paso un PDF "sábana" — varios documentos laborales argentinos pegados uno atrás del otro. Para CADA PÁGINA del PDF, decime qué tipo de documento es y los datos del empleado o vehículo, si aplica.
 
 Tipos posibles:
@@ -2275,21 +2278,7 @@ Si no podés identificar el tipo de una página, usá "desconocido".`;
     ]
   };
 
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify(body)
-  });
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => "");
-    throw new Error(`Claude API ${resp.status}: ${errText.slice(0, 300)}`);
-  }
-  const json = await resp.json();
+  const json = await llamarClaudeMessages(body, "Claude API");
   const textoRespuesta = (json?.content?.[0]?.text || "").trim();
 
   // Parsear el JSON
@@ -2954,87 +2943,34 @@ async function tgChequearYAvisarInterno({ forzarEnvio, visible }) {
   };
 }
 
-async function obtenerApiKeyYModelo() {
-  const data = await chrome.storage.local.get([KEY_API_KEY, KEY_MODELO]);
+async function obtenerIAConfig() {
+  const data = await chrome.storage.local.get([KEY_API_KEY, KEY_MODELO, KEY_AI_PROXY_URL]);
   const apiKey = data[KEY_API_KEY] || "";
   const modelo = data[KEY_MODELO] || MODELO_DEFAULT;
-  if (!apiKey) throw new Error("Falta la API Key de Anthropic. Cargala en Opciones de la extensi\u00f3n.");
-  return { apiKey, modelo };
+  const proxyUrl = String(data[KEY_AI_PROXY_URL] || "").trim();
+  if (!proxyUrl && !apiKey) {
+    throw new Error("Falta configurar IA: carg\u00e1 Proxy URL o API Key en Opciones.");
+  }
+  return { apiKey, modelo, proxyUrl };
 }
 
-function construirListaTipos() {
-  return TIPOS_DOCUMENTO.map((t) => `- ${t.id}: ${t.desc}`).join("\n");
-}
+async function llamarClaudeMessages(body, etiquetaError) {
+  const { apiKey, proxyUrl } = await obtenerIAConfig();
 
-async function clasificarPaginaConClaude(base64, mediaType) {
-  const { apiKey, modelo } = await obtenerApiKeyYModelo();
-
-  const prompt = `Mir\u00e1 esta imagen de una p\u00e1gina de un PDF escaneado. Es documentaci\u00f3n laboral argentina (empresa Matesin Claudio Fabi\u00e1n, CUIT 20-20999512-4) que va a subirse al sistema controldocumentario.com para el cliente BUNGE.
-
-IMPORTANTE: El documento puede estar ROTADO o escaneado de costado (90\u00b0 o 180\u00b0). Le\u00e9 el texto en cualquier orientaci\u00f3n que aparezca. No te confundas por la rotaci\u00f3n.
-
-PASO 1 \u2014 Identific\u00e1 el tipo de documento. Le\u00e9 atentamente el T\u00cdTULO y CONTENIDO COMPLETO de la p\u00e1gina antes de clasificar. No te apures \u2014 mir\u00e1 toda la imagen:
-${construirListaTipos()}
-
-REGLAS CLAVE PARA CLASIFICAR:
-* Si ves "ENTREGA DE ROPA DE TRABAJO Y ELEMENTOS DE PROTECCI\u00d3N PERSONAL" o "Resoluci\u00f3n 299/11" o una tabla con productos como casco, botines, guantes, lentes, camisa, pantal\u00f3n, chaleco \u2192 es "entrega_epp".
-* Si ves "Planilla de asistencia" o "capacitaci\u00f3n" \u2192 es "capacitacion".
-* Si ves una tabla con conceptos como jubilaci\u00f3n, ley 19032, sindical, hs trabajadas \u2192 es "recibo_haberes".
-* P\u00e1gina con logo ARCA + recuadro "931" + tablas "REGIMEN NACIONAL DE SEGURIDAD SOCIAL" \u2192 es "f931". Es el formulario de declaraci\u00f3n jurada, nunca un ticket de banco.
-* Banco Provincia "Pago" + "N\u00famero de VEP" + impuestos con c\u00f3digos 351/301/352/302/312 (contribuciones y aportes seg. social) \u2192 es "pago_f931". Estos c\u00f3digos son la se\u00f1al definitiva.
-* Banco Provincia "Pago" + dice "Nombre del Ente Abonado: UOCRA" (o "UOCRA - Online") \u2192 es "pago_uocra". Ning\u00fan otro ticket tiene UOCRA como ente abonado.
-* Banco Provincia "Nueva transferencia" + campo Referencia dice "VAR f.Desempleo" \u2192 es SIEMPRE "transferencia_desempleo". NUNCA "pago_f931". Son documentos distintos: uno tiene c\u00f3digos de impuestos (351/301/312), el otro tiene "Titular cuenta destino" y referencia "VAR f.Desempleo".
-* NO confundas planillas de EPP con recibos de sueldo o transferencias.
-
-PASO 2 \u2014 Extra\u00e9 datos del EMPLEADO (no de la empresa):
-- cuil: CUIL o CUIT del EMPLEADO. Reglas:
-  * NUNCA pongas 20-20999512-4 / 20209995124 / CLAUDIO FABIAN MATESIN \u2014 ese es el titular de la empresa y NO es un empleado (EXCEPTO si el empleado se llama MATESIN GENARO, que s\u00ed es empleado).
-  * En recibos de sueldo: el CUIL est\u00e1 junto al apellido/nombre del trabajador.
-  * En transferencias bancarias: el empleado es el del campo "Titular cuenta destino", NO "Titular". Extra\u00e9 el CUIL de ah\u00ed. Puede estar sin guiones (ej: 20277427053 \u2192 20-27742705-3).
-  * En planillas de EPP (entrega_epp): el empleado est\u00e1 en el campo "Nombre y Apellido del Trabajador". El CUIL/DNI puede estar en el campo "D.N.I." o "C.U.I.T.".
-  * Si no ves claramente el CUIL del empleado, dejalo vac\u00edo.
-- apellido: apellido del EMPLEADO. En planillas EPP sacalo de "Nombre y Apellido del Trabajador". Si dice "Genaro Matesin" \u2192 apellido "MATESIN", nombre "GENARO".
-- nombre: nombre del EMPLEADO.
-- patente: patente del veh\u00edculo (ABC123 o AB123CD) solo si es seguro automotor.
-- periodo: per\u00edodo en formato YYYY-MM si aparece.
-- textoEstable: entre 5 y 12 palabras clave estables que identifiquen ESTE documento y ESTA persona espec\u00edfica. Inclu\u00ed nombre/apellido del empleado, t\u00edtulo del formulario o tipo de documento, empresa si es relevante. EXCLU\u00cd: fechas, montos, n\u00fameros de transacci\u00f3n, VEP, per\u00edodos, CBU. Ejemplo: "LOPEZ JUAN RECIBO HABERES MATESIN" o "GOMEZ PEDRO ENTREGA EPP RESOLUCI\u00d3N 299" o "RODRIGUEZ ANA DECLARACI\u00d3N F931 BUNGE".
-
-Respond\u00e9 SOLO con un JSON v\u00e1lido (sin markdown, sin explicaciones, sin bloques de c\u00f3digo):
-{"id":"xxx","cuil":"","apellido":"","nombre":"","patente":"","periodo":"","textoEstable":""}
-
-Si un dato no aplica o no aparece, dejalo como "". Si no pod\u00e9s identificar el tipo, us\u00e1 "desconocido".`;
-
-  const body = {
-    model: modelo,
-    max_tokens: 400,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-          { type: "text", text: prompt }
-        ]
-      }
-    ]
-  };
-
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify(body)
-  });
-
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => "");
-    throw new Error(`Claude API ${resp.status}: ${errText.slice(0, 300)}`);
+  if (proxyUrl) {
+    const resp = await fetch(proxyUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ body })
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      throw new Error(`${etiquetaError} proxy ${resp.status}: ${errText.slice(0, 300)}`);
+    }
+    return await resp.json();
   }
 
-  const json = await resp.json();
+  const json = await llamarClaudeMessages(body, "Claude API");
   const textoRespuesta = (json?.content?.[0]?.text || "").trim();
 
   let parsed = null;
@@ -3065,26 +3001,14 @@ Si un dato no aplica o no aparece, dejalo como "". Si no pod\u00e9s identificar 
 }
 
 async function probarConexionClaude() {
-  const { apiKey, modelo } = await obtenerApiKeyYModelo();
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify({
-      model: modelo,
-      max_tokens: 10,
-      messages: [{ role: "user", content: "Responde solo con la palabra OK" }]
-    })
-  });
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => "");
-    throw new Error(`Claude API ${resp.status}: ${errText.slice(0, 300)}`);
-  }
-  const json = await resp.json();
+  const { modelo } = await obtenerIAConfig();
+  const body = {
+    model: modelo,
+    max_tokens: 10,
+    messages: [{ role: "user", content: "Responde solo con la palabra OK" }]
+  };
+  const json = await llamarClaudeMessages(body, "Claude API");
   const texto = (json?.content?.[0]?.text || "").trim();
   return { ok: true, respuesta: texto, modelo };
 }
+

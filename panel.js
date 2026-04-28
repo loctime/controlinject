@@ -540,9 +540,9 @@
 
   function alertarErrorOcr(e) {
     const msg = e?.message || String(e);
-    const esApiKey = /api.?key|anthropic|cargala/i.test(msg);
+    const esApiKey = /api.?key|anthropic|cargala|proxy|configurar ia/i.test(msg);
     if (esApiKey) {
-      mostrarToast("⚠️ API Key de Anthropic no configurada. Andá a Opciones de la extensión y cargala.");
+      mostrarToast("⚠️ IA no configurada. Cargá API Key o Proxy IA en Opciones.");
       alert("Falta la API Key de Anthropic.\n\nAbrí las Opciones de la extensión y pegá tu clave para que Claude pueda leer los documentos.");
     } else {
       mostrarToast(`Error al procesar con Claude: ${msg}`);
@@ -2694,3 +2694,4 @@
     renderTabla
   };
 })();
+
