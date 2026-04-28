@@ -20,7 +20,20 @@ Contiene:
 
 En Vercel -> Settings -> Environment Variables:
 
+Configura al menos una:
+
 - `ANTHROPIC_API_KEY = sk-ant-...`
+- `GEMINI_API_KEY = ...`
+
+Opcional para Gemini:
+
+- `GEMINI_MODEL = gemini-2.0-flash`
+
+Prioridad automática del proxy:
+
+1. Si existe `ANTHROPIC_API_KEY`, usa Anthropic.
+2. Si no, usa Gemini.
+3. Si no hay ninguna, responde error.
 
 Aplicala al entorno `Production` (y Preview si querés).
 
@@ -40,4 +53,4 @@ En Opciones de la extensión:
 - Guardar
 - Probar conexión
 
-Con eso, la API key queda centralizada en Vercel y no en cada Chrome.
+Con eso, la API key queda centralizada en Vercel y no en cada Chrome. El usuario final no elige proveedor ni ve estos detalles.
