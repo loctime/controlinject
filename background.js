@@ -7,6 +7,7 @@ const KEY_PATRONES_SABANA = "matesin_patrones_sabana";
 const KEY_API_KEY = "matesin_anthropic_api_key";
 const KEY_MODELO = "matesin_anthropic_modelo";
 const KEY_AI_PROXY_URL = "matesin_ai_proxy_url";
+const KEY_CONTROLFILE_BASE_URL = "matesin_controlfile_base_url";
 
 const KEY_CD_USER = "matesin_cd_user";
 const KEY_CD_PASS = "matesin_cd_pass";
@@ -33,13 +34,16 @@ const MODELO_DEFAULT = "claude-haiku-4-5-20251001";
 const IA_PROXY_URL_HARDCODED = "https://controlinject.vercel.app/api/anthropic/messages";
 
 // ===================== FIREBASE =====================
-const FB_API_KEY = "AIzaSyDyyhN6_k9vxQE2nPY45Euruikm65DI88I";
-const FB_PROJECT_ID = "control-inject";
+const FB_API_KEY = "AIzaSyAOwCob-DvmU0R0nbyk12XlBLxirV1gXVs";
+const FB_PROJECT_ID = "controlstorage-eb796";
 const FB_AUTH_URL = "https://identitytoolkit.googleapis.com/v1/accounts";
 const FB_TOKEN_URL = "https://securetoken.googleapis.com/v1/token";
 const FB_FS_URL = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT_ID}/databases/(default)/documents`;
-const GOOGLE_CLIENT_ID = "1012115598233-09tcoet0isgte4q94etijp66lfq3f7kq.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "909876364192-da3m0kr3of77fhk1f9jnjjobogv9a8jd.apps.googleusercontent.com";
 const KEY_FB_AUTH = "matesin_fb_auth";
+const APP_FS_ID = "control-inject";
+const CF_UPLOAD_MAPPING_PATH = "/api/apps/controlinject/upload-mapping";
+const CF_DOWNLOAD_MAPPING_PATH = "/api/apps/controlinject/download-mapping";
 
 const TIPOS_DOCUMENTO = [
   { id: "f931", etiqueta: "931", desc: "Formulario ARCA 931 — tiene el logo de ARCA y un recuadro grande con el número '931' impreso. Dice 'Declaración Jurada en Pesos con centavos S.U.S.S.' Tiene tablas con secciones 'I - REGIMEN NACIONAL DE SEGURIDAD SOCIAL', 'II - REGIMEN NACIONAL DE OBRAS SOCIALES', 'VI - LEY DE RIESGOS DE TRABAJO', 'VIII - MONTOS QUE SE INGRESAN'. Es el formulario de declaración jurada, NO un ticket de banco." },
@@ -285,6 +289,142 @@ function fbSafeDocId(value) {
   return String(value || "").replace(/[/.#?[\]]/g, "_").slice(0, 150);
 }
 
+function fsAppPath(path = "") {
+  const clean = String(path || "").replace(/^\/+/, "");
+  return clean ? `apps/${APP_FS_ID}/${clean}` : `apps/${APP_FS_ID}`;
+}
+
+function fsUserDocPath(uid) {
+  return fsAppPath(`users/${uid}`);
+}
+
+function fsPatronDocPath(uid, docId) {
+  return fsAppPath(`users/${uid}/patrones/${docId}`);
+}
+
+function fsPatronesCollectionPath(uid) {
+  return fsAppPath(`users/${uid}/patrones`);
+}
+
+async function cfGetBackendBaseUrl() {
+  const auth = await fbGetValidAuth();
+  if (!auth?.uid) throw new Error("No hay sesión Firebase activa.");
+  const data = await chrome.storage.local.get([KEY_CONTROLFILE_BASE_URL]);
+  const baseUrl = String(data[KEY_CONTROLFILE_BASE_URL] || "").trim();
+  if (!baseUrl) {
+    throw new Error("Falta configurar ControlStorage baseUrl (clave matesin_controlfile_base_url).");
+  }
+  if (!auth?.idToken) throw new Error("No hay token Firebase válido.");
+  return { baseUrl: baseUrl.replace(/\/+$/, ""), auth };
+}
+
+function normalizarSegmentoPath(valor) {
+  return String(valor || "")
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 120) || "sin_nombre";
+}
+
+async function cfSubirReferenciaPatronRemoto(payload) {
+  const nombre = String(payload?.nombre || "").trim();
+  const imagenes = Array.isArray(payload?.imagenes) ? payload.imagenes : [];
+  const bloques = Array.isArray(payload?.bloques) ? payload.bloques : [];
+  if (!nombre) throw new Error("Falta nombre de patrón.");
+  if (!imagenes.length) throw new Error("No hay imágenes para subir.");
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  const path = ["mapeos", normalizarSegmentoPath(nombre), fecha];
+
+  const snapshot = {
+    nombre,
+    imagenes,
+    bloques,
+    guardadoEn: Date.now(),
+    version: 1
+  };
+  const { baseUrl, auth } = await cfGetBackendBaseUrl();
+  const fileName = `referencia-${normalizarSegmentoPath(nombre)}.json`;
+  const res = await fetch(`${baseUrl}${CF_UPLOAD_MAPPING_PATH}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${auth.idToken}`
+    },
+    body: JSON.stringify({
+      appId: "controlinject",
+      nombre,
+      fileName,
+      path,
+      snapshot
+    })
+  });
+  const uploaded = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(uploaded?.error || uploaded?.message || `Upload mapping falló (${res.status}).`);
+
+  const fileId = uploaded?.fileId;
+  if (!fileId) throw new Error("ControlStorage no devolvió fileId.");
+
+  const docId = fbSafeDocId(nombre);
+  await fsSetDoc(fsPatronDocPath(auth.uid, docId), {
+    nombre,
+    controlStorageRef: {
+      fileId,
+      fileName: uploaded?.fileName || fileName,
+      fileSize: uploaded?.fileSize || null,
+      downloadUrl: uploaded?.downloadUrl || null,
+      shareUrl: uploaded?.shareUrl || null,
+      updatedAtMs: Date.now()
+    }
+  }, auth.idToken);
+
+  return {
+    ok: true,
+    fileId,
+    downloadUrl: uploaded?.downloadUrl || null,
+    shareUrl: uploaded?.shareUrl || null
+  };
+}
+
+async function cfDescargarReferenciaPatronRemoto(nombrePatron) {
+  const nombre = String(nombrePatron || "").trim();
+  if (!nombre) throw new Error("Falta nombre de patrón.");
+  const { baseUrl, auth } = await cfGetBackendBaseUrl();
+  const docId = fbSafeDocId(nombre);
+  const patron = await fsGetDoc(fsPatronDocPath(auth.uid, docId), auth.idToken);
+  const fileId = patron?.controlStorageRef?.fileId;
+  if (!fileId) return null;
+  const res = await fetch(`${baseUrl}${CF_DOWNLOAD_MAPPING_PATH}?fileId=${encodeURIComponent(fileId)}`, {
+    headers: { Authorization: `Bearer ${auth.idToken}` }
+  });
+  if (!res.ok) throw new Error(`No se pudo descargar referencia remota (${res.status}).`);
+  const data = await res.json();
+  return {
+    nombre: data?.nombre || nombre,
+    imagenes: Array.isArray(data?.imagenes) ? data.imagenes : [],
+    bloques: Array.isArray(data?.bloques) ? data.bloques : [],
+    imagenesPorBloque: data?.imagenesPorBloque || null
+  };
+}
+
+async function cfDebugUpload() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const nombre = `debug-controlstorage-${stamp}`;
+  const pixel =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2Q6o0AAAAASUVORK5CYII=";
+  return await cfSubirReferenciaPatronRemoto({
+    nombre,
+    imagenes: [{ pagina: 1, base64: `data:image/png;base64,${pixel}` }],
+    bloques: [{
+      nombre: "Debug",
+      paginas: [1],
+      requerimientos: [],
+      destino: { modo: "uno", entidadesObjetivo: [] },
+      meta: {}
+    }]
+  });
+}
+
 async function fbSyncConfigUp() {
   const auth = await fbGetValidAuth();
   if (!auth?.idToken || !auth.uid) throw new Error("No hay sesión Firebase activa.");
@@ -295,7 +435,9 @@ async function fbSyncConfigUp() {
     KEY_TG_SILENCIO_DESDE, KEY_TG_SILENCIO_HASTA, KEY_MAPEOS, KEY_PATRONES_SABANA
   ]);
 
-  await fsSetDoc(`users/${auth.uid}/config`, {
+  await fsSetDoc(fsUserDocPath(auth.uid), {
+    uid: auth.uid,
+    email: auth.email || "",
     apiKey: local[KEY_API_KEY] || "",
     modelo: local[KEY_MODELO] || MODELO_DEFAULT,
     aiProxyUrl: local[KEY_AI_PROXY_URL] || "",
@@ -316,7 +458,7 @@ async function fbSyncConfigUp() {
   const patrones = Array.isArray(local[KEY_PATRONES_SABANA]) ? local[KEY_PATRONES_SABANA] : [];
   await Promise.all(patrones.map(async (p) => {
     const docId = fbSafeDocId(p.nombre || `patron_${Date.now()}`);
-    await fsSetDoc(`users/${auth.uid}/patrones/${docId}`, {
+    await fsSetDoc(fsPatronDocPath(auth.uid, docId), {
       nombre: p.nombre || "",
       bloquesModal: Array.isArray(p.bloquesModal) ? p.bloquesModal : [],
       firmaTipos: Array.isArray(p.firmaTipos) ? p.firmaTipos : [],
@@ -334,7 +476,7 @@ async function fbSyncConfigDown() {
   const auth = await fbGetValidAuth();
   if (!auth?.idToken || !auth.uid) throw new Error("No hay sesión Firebase activa.");
 
-  const config = await fsGetDoc(`users/${auth.uid}/config`, auth.idToken);
+  const config = await fsGetDoc(fsUserDocPath(auth.uid), auth.idToken);
   if (config) {
     await chrome.storage.local.set({
       [KEY_API_KEY]: config.apiKey || "",
@@ -354,7 +496,7 @@ async function fbSyncConfigDown() {
     });
   }
 
-  const patrones = await fsListCollection(`users/${auth.uid}/patrones`, auth.idToken);
+  const patrones = await fsListCollection(fsPatronesCollectionPath(auth.uid), auth.idToken);
   if (patrones.length) {
     await chrome.storage.local.set({
       [KEY_PATRONES_SABANA]: patrones.map((p) => ({
@@ -364,7 +506,8 @@ async function fbSyncConfigDown() {
         bloques: Array.isArray(p.bloques) ? p.bloques : undefined,
         firma: Array.isArray(p.firma) ? p.firma : undefined,
         totalPaginas: p.totalPaginas || undefined,
-        updatedAt: p.updatedAtMs || Date.now()
+        updatedAt: p.updatedAtMs || Date.now(),
+        controlStorageRef: p.controlStorageRef || null
       }))
     });
   }
@@ -444,6 +587,14 @@ async function manejarMensaje(mensaje) {
     await chrome.storage.local.set({ [KEY_PATRONES_SABANA]: arr });
     fbSyncConfigUp().catch(() => {});
     return { saved: true };
+  }
+
+  if (accion === "storage:guardarImagenesPatronRemoto") {
+    return await cfSubirReferenciaPatronRemoto(mensaje?.payload || {});
+  }
+
+  if (accion === "storage:descargarImagenesPatronRemoto") {
+    return await cfDescargarReferenciaPatronRemoto(mensaje?.payload?.nombre || "");
   }
 
   if (accion === "storage:guardarPatronesSabana") {
@@ -546,6 +697,22 @@ async function manejarMensaje(mensaje) {
     await chrome.storage.local.set({ [KEY_CD_USER]: user, [KEY_CD_PASS]: pass });
     fbSyncConfigUp().catch(() => {});
     return { saved: true };
+  }
+
+  if (accion === "controlfile:getBaseUrl") {
+    const data = await chrome.storage.local.get([KEY_CONTROLFILE_BASE_URL]);
+    return { baseUrl: data[KEY_CONTROLFILE_BASE_URL] || "" };
+  }
+
+  if (accion === "controlfile:setBaseUrl") {
+    const baseUrl = String(mensaje?.payload?.baseUrl || "").trim();
+    await chrome.storage.local.set({ [KEY_CONTROLFILE_BASE_URL]: baseUrl });
+    fbSyncConfigUp().catch(() => {});
+    return { saved: true, baseUrl };
+  }
+
+  if (accion === "controlfile:debugUpload") {
+    return await cfDebugUpload();
   }
 
   if (accion === "auth:probarLogin") {

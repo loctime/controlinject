@@ -26,6 +26,18 @@
     await enviarMensajeExtension({ action: "storage:guardarPatronSabana", payload });
   }
 
+  async function guardarImagenesPatronRemoto(payload) {
+    return enviarMensajeExtension({ action: "storage:guardarImagenesPatronRemoto", payload });
+  }
+
+  async function descargarImagenesPatronRemoto(nombre) {
+    return enviarMensajeExtension({ action: "storage:descargarImagenesPatronRemoto", payload: { nombre } });
+  }
+
+  async function syncDownFirebase() {
+    return enviarMensajeExtension({ action: "firebase:syncDown" });
+  }
+
   async function limpiarPatronesSabana() {
     await enviarMensajeExtension({ action: "storage:limpiarPatronesSabana" });
   }
@@ -58,6 +70,9 @@
     limpiarMemoria,
     leerPatronesSabana,
     guardarPatronSabana,
+    guardarImagenesPatronRemoto,
+    descargarImagenesPatronRemoto,
+    syncDownFirebase,
     guardarPatronesSabana,
     limpiarPatronesSabana,
     matchearConMapeo,

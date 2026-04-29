@@ -2,7 +2,7 @@
 
 ## 1) Single purpose (propósito único)
 
-`La extensión automatiza la carga de documentación en controldocumentario.com, incluyendo mapeo de PDFs, clasificación de páginas, asignación a requerimientos y sincronización de configuración para uso operativo empresarial.`
+`La extensión automatiza la carga de documentación, incluyendo mapeo de PDFs, clasificación de páginas, asignación a requerimientos y sincronización de configuración para uso operativo empresarial.`
 
 ## 2) Justificación de permisos
 

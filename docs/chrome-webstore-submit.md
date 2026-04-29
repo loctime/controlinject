@@ -12,8 +12,8 @@
 
 ## Datos de ficha (Store listing)
 
-- Nombre: `DocAutomatizacion`
-- Descripcion corta: `Automatiza la carga de documentos en controldocumentario.com`
+- Nombre: `ControlBun`
+- Descripcion corta: `Automatiza la carga de documentos`
 - Descripcion completa: explicar que procesa PDFs del usuario para sugerir y subir documentacion
 - Icono: usar `icons/icon128.png`
 - Capturas: opciones + panel en sitio + flujo de mapeo/aprender

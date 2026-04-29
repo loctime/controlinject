@@ -345,6 +345,26 @@
           <button id="limpiar-sabana" type="button" class="alt">Limpiar patrones de sabana</button>
         </div>
       </article>
+
+      <article class="card">
+        <h2>5) Debug ControlStorage</h2>
+        <p class="help">Prueba tecnica para validar subida remota de referencia usando SDK.</p>
+
+        <div class="row">
+          <label for="cf-baseurl">ControlStorage Base URL</label>
+          <input id="cf-baseurl" type="text" placeholder="https://tu-backend-controlstorage..." autocomplete="off" />
+          <div class="hint">Se usa para inicializar el SDK con appId = controlinject.</div>
+        </div>
+
+        <div class="acciones">
+          <button id="cf-guardar-baseurl" type="button" class="alt">Guardar URL</button>
+          <button id="cf-debug-upload" type="button">Probar subida</button>
+        </div>
+        <div class="row">
+          <label for="cf-debug-output">Resultado</label>
+          <textarea id="cf-debug-output" rows="6" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 11px;font-size:12px;font-family:Consolas, monospace;" readonly></textarea>
+        </div>
+      </article>
     </section>
 
     <p id="estado"></p>

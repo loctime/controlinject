@@ -1,4 +1,7 @@
 {
+	"scripts": {
+		"zip": "powershell -NoProfile -Command \"$v=(Get-Content manifest.json -Raw | ConvertFrom-Json).version; $out=\\\"controlinject-v$v.zip\\\"; if(Test-Path $out){Remove-Item $out -Force}; Compress-Archive -Path manifest.json,background.js,content.js,imagedb.js,matcher.js,modal-seleccion.js,ocr-engine.js,options.html,options.js,page-inject-confirm-patch.js,panel.css,panel.html,panel.js,pdf-splitter.js,storage.js,vencimientos.js,icons -DestinationPath $out -Force; Write-Host \\\"ZIP creado: $out\\\"\""
+	},
 	"dependencies": {
 		"@loctime/controlfile-sdk": "^1.0.12"
 	}

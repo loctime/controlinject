@@ -378,6 +378,12 @@
     console.log(`[MAU] [TRABAJAR] Procesando ${archivos.length} PDF(s). Origen: ${origen}`);
     if (!estado.requerimientos.length) await detectarRequerimientosPendientes();
 
+    try {
+      await window.MAUStorage.syncDownFirebase();
+    } catch (e) {
+      console.warn("[MAU][TRABAJAR] No se pudo sincronizar desde backend, se usa caché local.", e);
+    }
+
     const patrones = (await window.MAUStorage.leerPatronesSabana()) || [];
     if (!patrones.length) {
       mostrarToast("No hay mapeo guardado. Primero subí una sábana en la pestaña «Subir sábana».");
@@ -389,7 +395,21 @@
     const referenciasDisponibles = [];
     for (const p of patrones) {
       if (!p.nombre) continue;
-      const ref = await window.MAUImageDB.leerImagenesPatron(p.nombre);
+      let ref = null;
+      try {
+        const remoto = await window.MAUStorage.descargarImagenesPatronRemoto(p.nombre);
+        if (remoto?.imagenes?.length && remoto?.bloques?.length) {
+          await window.MAUImageDB.guardarImagenesPatron(p.nombre, {
+            imagenes: remoto.imagenes,
+            bloques: remoto.bloques,
+            imagenesPorBloque: remoto.imagenesPorBloque || null
+          });
+          ref = await window.MAUImageDB.leerImagenesPatron(p.nombre);
+        }
+      } catch (e) {
+        console.warn(`[MAU][TRABAJAR] No se pudo descargar referencia remota "${p.nombre}", fallback local.`, e);
+        ref = await window.MAUImageDB.leerImagenesPatron(p.nombre);
+      }
       const tieneImagenes = (ref?.imagenesPorBloque && Object.keys(ref.imagenesPorBloque).length > 0)
         || (ref?.imagenes?.length > 0);
       if (tieneImagenes && ref?.bloques?.length) {
@@ -2808,7 +2828,6 @@ function expandirRequerimientosPorDestino(requerimientosBase, destino, meta) {
             totalPaginas: numPaginas || 0,
             bloquesModal: bloquesConTexto
           });
-          mostrarToast(`Mapeo guardado: ${bloques.length} bloque(s) con texto.`);
         } catch (err) {
           console.warn("[MAU] No se pudo guardar el patrón:", err);
         }
@@ -2822,19 +2841,30 @@ function expandirRequerimientosPorDestino(requerimientosBase, destino, meta) {
               (info) => actualizarProgreso(info.pagina, info.totalPaginas, `Guardando imagen ${info.pagina}/${info.totalPaginas}…`),
               { escala: 120, calidad: 0.55 }
             );
+            const snapshotBloques = bloquesConTexto.map((b) => ({
+              nombre: b.nombre,
+              paginas: b.paginas,
+              requerimientos: b.requerimientos,
+              destino: b.destino || { modo: "uno", entidadesObjetivo: [] },
+              meta: b.meta || {}
+            }));
+            // Backend es la fuente de verdad: si falla remoto, no confirmar guardado completo.
+            await window.MAUStorage.guardarImagenesPatronRemoto({
+              nombre: nombreBase,
+              imagenes: imagenesRef,
+              bloques: snapshotBloques
+            });
             await window.MAUImageDB.guardarImagenesPatron(nombreBase, {
               imagenes: imagenesRef,
-              bloques: bloquesConTexto.map((b) => ({
-                nombre: b.nombre,
-                paginas: b.paginas,
-                requerimientos: b.requerimientos,
-                destino: b.destino || { modo: "uno", entidadesObjetivo: [] },
-                meta: b.meta || {}
-              }))
+              bloques: snapshotBloques
             });
+            mostrarToast(`Mapeo guardado en backend: ${bloques.length} bloque(s).`);
             console.log(`[MAU] Imágenes de referencia guardadas para "${nombreBase}" (${imagenesRef.length} páginas)`);
           } catch (e) {
             console.warn("[MAU] No se pudieron guardar las imágenes de referencia:", e);
+            mostrarToast(`No se pudo guardar en backend: ${e?.message || e}.`);
+            ui.pText.textContent = "Error guardando mapeo en backend.";
+            return;
           }
         }
 
