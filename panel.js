@@ -145,8 +145,11 @@
       if (lineas.length > 0) {
         // La primera línea suele ser el nombre (ej: "FERNANDEZ ENRIQUE DARIO")
         const primeraLinea = lineas[0];
-        // Verificar que parece un nombre (al menos 2 palabras en mayúsculas, no "Argentina", no "Empleador")
-        if (/^[A-ZÁÉÍÓÚÑ\s]{4,}$/.test(primeraLinea) && !/argentina|empleador|contrato/i.test(primeraLinea)) {
+        // Verificar que parece un nombre (2+ palabras, mayúsculas o tipo título; no "Argentina"/"Empleador"/"Contrato")
+        if (
+          /^([A-Za-zÁÉÍÓÚÑáéíóúñ]{2,}\s+){1,}[A-Za-zÁÉÍÓÚÑáéíóúñ]{2,}$/.test(primeraLinea) &&
+          !/argentina|empleador|contrato|seguridad|higiene|ley\s*n/i.test(primeraLinea)
+        ) {
           nombreCompleto = primeraLinea;
         }
       }
@@ -170,6 +173,30 @@
       if (primeraMayus) apellido = primeraMayus[1];
     }
     return { textoCompleto, apellido, nombre, cuil, contrato };
+  }
+
+  function elegirMejorRecursoDeFila(celdas, idxRecurso, link) {
+    const vacio = { textoCompleto: "", apellido: "", nombre: "", cuil: "", contrato: "" };
+    if (!celdas || !celdas.length) return vacio;
+    const candidatos = [];
+    if (idxRecurso >= 0 && celdas[idxRecurso]) candidatos.push(celdas[idxRecurso]);
+    celdas.forEach((td) => { if (!candidatos.includes(td)) candidatos.push(td); });
+    let mejor = vacio;
+    let mejorScore = -1;
+    for (const td of candidatos) {
+      if (!td || (link && td.contains(link))) continue;
+      const rec = parsearRecurso(td);
+      const txt = textoPlano(td.textContent);
+      let score = 0;
+      if (rec.apellido) score += 5;
+      if (/empleador|contrato|argentina/i.test(txt)) score += 3;
+      if (/([A-Za-zÁÉÍÓÚÑáéíóúñ]{2,}\s+){1,}[A-Za-zÁÉÍÓÚÑáéíóúñ]{2,}/.test(txt)) score += 2;
+      if (score > mejorScore) {
+        mejorScore = score;
+        mejor = rec;
+      }
+    }
+    return mejor;
   }
 
   // Lee los nombres del widget "Sobres activos" en la página del sistema.
@@ -238,19 +265,7 @@
       const nombre = textoPlano(link.textContent);
       if (!nombre) continue;
       const celdas = tr.querySelectorAll(":scope > td");
-      let recursoData = { textoCompleto: "", apellido: "", nombre: "", cuil: "", contrato: "" };
-      if (idxRecurso >= 0 && celdas[idxRecurso]) {
-        recursoData = parsearRecurso(celdas[idxRecurso]);
-      } else {
-        for (const td of celdas) {
-          if (td.contains(link)) continue;
-          const tdText = textoPlano(td.textContent);
-          if (/[A-Z]{2,}\s+[A-Z]{2,}/i.test(tdText) && !/matesin/i.test(tdText)) {
-            recursoData = parsearRecurso(td);
-            break;
-          }
-        }
-      }
+      const recursoData = elegirMejorRecursoDeFila(celdas, idxRecurso, link);
       const fechaTxt = (tr.textContent.match(/(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2})?)/) || [])[1] || "";
       // Usar el href del link como clave primaria: cada fila del sitio tiene URL única,
       // lo que evita que filas con mismo nombre de requerimiento se sobreescriban cuando
@@ -270,13 +285,22 @@
       .find((el) => /buscar/i.test(el.textContent || el.value || ""));
     if (botonBuscar) botonBuscar.click();
 
-    await dormir(900);
-
     const idxRecurso = detectarIndiceColumnaRecurso();
     console.log(`[MAU] Índice columna Recurso: ${idxRecurso}`);
 
-    const mapaTabla = escanearFilasTabla(idxRecurso);
-    console.log(`[MAU] Filas en tabla (sin filtro estado): ${mapaTabla.size}`);
+    // La tabla puede tardar en renderizar luego de "Buscar".
+    // Reintentar para evitar quedarnos solo con sobres genéricos sin Recurso.
+    let mapaTabla = new Map();
+    let intentosTabla = 0;
+    while (intentosTabla < 6) {
+      await dormir(600);
+      mapaTabla = escanearFilasTabla(idxRecurso);
+      const conRecurso = Array.from(mapaTabla.values()).filter((e) => e?.recurso?.apellido).length;
+      console.log(`[MAU] Filas en tabla (sin filtro estado): ${mapaTabla.size} (con recurso: ${conRecurso}) intento=${intentosTabla + 1}/6`);
+      if (mapaTabla.size > 0) break;
+      if (botonBuscar) botonBuscar.click();
+      intentosTabla++;
+    }
 
     const nombresSobre = leerNombresDesdeSobresActivos();
     let reqs;
@@ -302,7 +326,11 @@
           reqs.push({ nombre, link: null, recurso: vacios });
         }
       }
-      console.log(`[MAU] Requerimientos desde sobres activos: ${reqs.length}`);
+      const conRecurso = reqs.filter((r) => r?.recurso?.apellido).length;
+      console.log(`[MAU] Requerimientos desde sobres activos: ${reqs.length} (con recurso: ${conRecurso})`);
+      if (conRecurso === 0) {
+        console.warn("[MAU] Advertencia: se leyeron requerimientos sin datos de Recurso; la asignación por nombre puede quedar limitada.");
+      }
     } else {
       // Fallback: solo los que tienen "pend envío" (comportamiento anterior).
       reqs = Array.from(mapaTabla.values())
@@ -314,15 +342,20 @@
       console.log(`[MAU] Requerimientos (fallback pend envío): ${reqs.length}`);
     }
 
-    estado.requerimientos = reqs;
-    estado.filas = reqs.map((r) => ({
-      id: estado.nextFilaId++,
-      tipo: "requerimiento",
-      requerimiento: r.nombre,
-      recurso: r.recurso,
-      archivo: null,
-      estado: "pendiente"
-    }));
+    const filasIniciales = [];
+    estado.requerimientos = reqs.map((r) => {
+      const filaId = estado.nextFilaId++;
+      filasIniciales.push({
+        id: filaId,
+        tipo: "requerimiento",
+        requerimiento: r.nombre,
+        recurso: r.recurso,
+        archivo: null,
+        estado: "pendiente"
+      });
+      return { ...r, id: filaId };
+    });
+    estado.filas = filasIniciales;
     renderTabla();
   }
 
@@ -415,7 +448,7 @@
         const src = await window.PDFLib.PDFDocument.load(bytes);
 
         for (const bloque of bloquesFinales) {
-          const { paginas, requerimientos, meta } = bloque;
+          const { paginas, requerimientos, meta, destino } = bloque;
           if (!paginas?.length || !requerimientos?.length) continue;
           const nuevo = await window.PDFLib.PDFDocument.create();
           const indices = paginas.map((n) => n - 1).filter((i) => i >= 0 && i < src.getPageCount());
@@ -426,7 +459,9 @@
           const nombreArchivo = `${archivo.name.replace(/\.pdf$/i, "")}-Bloque.pdf`;
           const archivoBloque = new File([out], nombreArchivo, { type: "application/pdf" });
 
-          for (const req of requerimientos) {
+          const requerimientosExpand = expandirRequerimientosPorDestino(requerimientos, destino, meta || null);
+          console.log(`[MAU][TRABAJAR] Expand reqs: base=${requerimientos.length}, final=${requerimientosExpand.length}, modo=${destino?.modo || "uno"}, entidades_meta=${JSON.stringify(meta?.entidades_mencionadas || [])}`);
+          for (const req of requerimientosExpand) {
             const copia = new File([await archivoBloque.arrayBuffer()], nombreArchivo, { type: "application/pdf" });
             asignarArchivoARequerimiento(req, copia, meta || null);
             console.log(`[MAU][TRABAJAR] Asignado a «${req}» — páginas: ${paginas.join(",")}`);
@@ -976,20 +1011,29 @@
    * @param {Object} [metadata] - Metadata OCR: { apellido, nombre, cuil, patente }.
    */
   function asignarArchivoARequerimiento(nombreReq, archivo, metadata) {
-    // Compat legacy: algunos mapeos viejos guardaron "nombre||apellido".
-    if (nombreReq.includes("||")) {
-      const partes = nombreReq.split("||");
-      nombreReq = partes[0];
-    }
+    const parsedToken = parseReqToken(nombreReq);
+    nombreReq = parsedToken.nombreReq;
+    const filaIdForzada = parsedToken.filaIdForzada;
 
     console.log(`[MAU][ASIGNAR] === Inicio asignación ===`);
     console.log(`[MAU][ASIGNAR] Archivo: "${archivo.name}" → Requerimiento buscado: "${nombreReq}"`);
+    if (filaIdForzada) console.log(`[MAU][ASIGNAR] Fila forzada: ${filaIdForzada}`);
     console.log(`[MAU][ASIGNAR] Metadata:`, JSON.stringify(metadata || null));
     console.log(`[MAU][ASIGNAR] Total filas en estado: ${estado.filas.length}`);
 
     let filasCoincidentes = estado.filas.filter(
       (f) => f.tipo === "requerimiento" && f.requerimiento === nombreReq
     );
+    // Si hay match exacto único pero es una fila "base" sin recurso, ampliar al mismo requerido base.
+    if (filasCoincidentes.length <= 1) {
+      const baseNombreReq = quitarPeriodoReq(nombreReq);
+      const baseCandidatas = estado.filas.filter(
+        (f) => f.tipo === "requerimiento" && quitarPeriodoReq(f.requerimiento) === baseNombreReq
+      );
+      if (baseCandidatas.length > filasCoincidentes.length) {
+        filasCoincidentes = baseCandidatas;
+      }
+    }
 
     // Fallback: si no coincide exacto, buscar ignorando el sufijo de período (-2026-3, -2026-2, etc.)
     if (filasCoincidentes.length === 0) {
@@ -1035,11 +1079,21 @@
 
     let filaDestino = null;
 
-    if (filasCoincidentes.length === 1) {
+    if (filaIdForzada) {
+      const filaForzada = filasCoincidentes.find((f) => String(f.id) === String(filaIdForzada));
+      if (filaForzada) {
+        filaDestino = filaForzada;
+        console.log(`[MAU][ASIGNAR] Fila forzada encontrada → id=${filaDestino.id}`);
+      } else {
+        console.log(`[MAU][ASIGNAR] ⚠ Fila forzada no encontrada entre coincidencias, se usará lógica normal.`);
+      }
+    }
+
+    if (!filaDestino && filasCoincidentes.length === 1) {
       // Única fila con este nombre → asignar directo.
       filaDestino = filasCoincidentes[0];
       console.log(`[MAU][ASIGNAR] Única fila → id=${filaDestino.id}`);
-    } else if (metadata && (metadata.apellido || metadata.nombre)) {
+    } else if (!filaDestino && metadata && (metadata.apellido || metadata.nombre)) {
       // Múltiples filas con mismo nombre → usar metadata para elegir la correcta.
       // Construir nombre completo: apellido + nombre (ej: "FERNANDEZ DIEGO ARIEL")
       // para distinguir entre "FERNANDEZ ENRIQUE DARIO" y "FERNANDEZ DIEGO ARIEL".
@@ -1063,7 +1117,7 @@
         filaDestino = filasCoincidentes.find((f) => !f.archivo) || filasCoincidentes[0];
         console.log(`[MAU][ASIGNAR] Sin match recurso, fallback vacía → id=${filaDestino.id}`);
       }
-    } else {
+    } else if (!filaDestino) {
       // Sin metadata → asignar a la primera fila SIN archivo ya asignado.
       filaDestino = filasCoincidentes.find((f) => !f.archivo) || filasCoincidentes[0];
       console.log(`[MAU][ASIGNAR] Sin metadata, primera sin archivo → id=${filaDestino.id}`);
@@ -2428,44 +2482,113 @@
     return m ? m[1].replace(/\s+/g, "") : "";
   }
 
-  function expandirRequerimientosPorDestino(requerimientosBase, destino) {
-    const modo = destino?.modo || "uno";
-    const base = Array.isArray(requerimientosBase) ? [...requerimientosBase] : [];
-    if (!base.length || modo === "uno") return base;
+  function buildReqFilaToken(reqNombre, filaId) {
+    return `${String(reqNombre || "")}||__fila:${String(filaId || "")}`;
+  }
 
-    const objetivos = new Set((destino?.entidadesObjetivo || []).map(normalizarEntidadClave).filter(Boolean));
+  function parseReqToken(nombreReqRaw) {
+    const raw = String(nombreReqRaw || "");
+    let nombreReq = raw;
+    let filaIdForzada = null;
+    const mFila = raw.match(/^(.*?)\|\|__fila:(.+)$/);
+    if (mFila) {
+      nombreReq = mFila[1];
+      filaIdForzada = String(mFila[2] || "").trim();
+      return { nombreReq, filaIdForzada };
+    }
+    // Compat legacy: algunos mapeos viejos guardaron "nombre||apellido".
+    if (raw.includes("||")) nombreReq = raw.split("||")[0];
+    return { nombreReq, filaIdForzada: null };
+  }
+
+  function quitarPeriodoReq(s) {
+    return String(s || "").replace(/-\d{4}-\d+.*$/i, "").trim();
+  }
+
+  function detectarEntidadesMeta(meta) {
     const salida = [];
-    const conteoNombres = {};
-    (estado.requerimientos || []).forEach((r) => { conteoNombres[r.nombre] = (conteoNombres[r.nombre] || 0) + 1; });
+    const ap = String(meta?.apellido || "").trim();
+    const nom = String(meta?.nombre || "").trim();
+    const comp = [ap, nom].filter(Boolean).join(" ").trim();
+    if (comp) salida.push(comp);
+    if (ap) salida.push(ap);
+    const pat = String(meta?.patente || "").trim();
+    if (pat) salida.push(pat);
+    if (Array.isArray(meta?.entidades_mencionadas)) {
+      meta.entidades_mencionadas.forEach((x) => {
+        const t = String(x || "").trim();
+        if (t) salida.push(t);
+      });
+    }
+    const entidades = [...new Set(salida.map(normalizarEntidadClave).filter(Boolean))];
+    if (entidades.length) {
+      console.log("[MAU][DEBUG][IA] Entidades detectadas en bloque:", entidades);
+    }
+    return entidades;
+  }
 
-    const uidReq = (r) => r.nombre;
+  function tokensEntidad(s) {
+    return normalizarEntidadClave(s).split(" ").map((x) => x.trim()).filter(Boolean);
+  }
+
+  function esEntidadCompatible(a, b) {
+    const aa = normalizarEntidadClave(a);
+    const bb = normalizarEntidadClave(b);
+    if (!aa || !bb) return false;
+    if (aa === bb || aa.includes(bb) || bb.includes(aa)) return true;
+    const ta = new Set(tokensEntidad(aa));
+    const tb = new Set(tokensEntidad(bb));
+    if (!ta.size || !tb.size) return false;
+    const comunes = [...ta].filter((t) => tb.has(t)).length;
+    const minLen = Math.min(ta.size, tb.size);
+    // Compatibilidad por palabras sin importar orden:
+    // para nombres de 2+ palabras, exigir al menos 2 coincidencias.
+    if (minLen >= 2 && comunes >= 2) return true;
+    // Para cadenas cortas, permitir coincidencia completa del menor set.
+    if (comunes === minLen && minLen >= 1) return true;
+    return false;
+  }
+
+function expandirRequerimientosPorDestino(requerimientosBase, destino, meta) {
+    const base = Array.isArray(requerimientosBase) ? [...requerimientosBase] : [];
+    if (!base.length) return base;
+    const salida = [];
+    const uidReq = (r) => buildReqFilaToken(r.nombre, r.id);
 
     for (const req of base) {
-      const nombreBase = String(req || "");
-      const candidatos = (estado.requerimientos || []).filter((r) => r.nombre === nombreBase);
+      const { nombreReq: nombreBase } = parseReqToken(req);
+      const baseNombreReq = quitarPeriodoReq(nombreBase);
+      const candidatosExactos = (estado.requerimientos || []).filter((r) => r.nombre === nombreBase);
+      let candidatos = candidatosExactos;
+      if (candidatos.length <= 1) {
+        const candidatosBase = (estado.requerimientos || []).filter((r) => quitarPeriodoReq(r.nombre) === baseNombreReq);
+        if (candidatosBase.length > candidatos.length) candidatos = candidatosBase;
+      }
       if (!candidatos.length) {
-        salida.push(req);
+        salida.push(String(nombreBase || req || ""));
         continue;
       }
-      if (modo === "todas_las_entidades") {
+      // Regla general: si el requerido existe para varias filas/personas, asignar a todas.
+      if (candidatos.length > 1) {
+        const entidadesMeta = detectarEntidadesMeta(meta);
+        if (entidadesMeta.length) {
+          const matcheados = candidatos.filter((r) => {
+            const nombreEntidad = [r.recurso?.apellido, r.recurso?.nombre].filter(Boolean).join(" ");
+            const patenteEntidad = extraerPatenteDeTexto(r.nombre);
+            const claves = [normalizarEntidadClave(nombreEntidad), normalizarEntidadClave(patenteEntidad)].filter(Boolean);
+            return claves.some((k) => entidadesMeta.some((m) => esEntidadCompatible(k, m)));
+          });
+          if (matcheados.length) {
+            matcheados.forEach((r) => salida.push(uidReq(r)));
+            continue;
+          }
+        }
         candidatos.forEach((r) => salida.push(uidReq(r)));
         continue;
       }
-      if (modo === "entidades_especificas") {
-        let agregados = 0;
-        candidatos.forEach((r) => {
-          const nombreEntidad = [r.recurso?.apellido, r.recurso?.nombre].filter(Boolean).join(" ");
-          const patenteEntidad = extraerPatenteDeTexto(r.nombre);
-          const claves = [normalizarEntidadClave(nombreEntidad), normalizarEntidadClave(patenteEntidad)].filter(Boolean);
-          if (claves.some((k) => objetivos.has(k))) {
-            salida.push(uidReq(r));
-            agregados++;
-          }
-        });
-        if (agregados === 0) salida.push(req);
-        continue;
-      }
-      salida.push(req);
+
+      // Si no hay duplicados, mantener requerido simple.
+      salida.push(String(nombreBase || req || ""));
     }
     return [...new Set(salida)];
   }
@@ -2491,7 +2614,7 @@
       const out = await nuevo.save();
       const etiqueta = (b.nombre || "bloque").replace(/[/\\?%*:|"<>]/g, "-").slice(0, 60);
       const archivo = new File([out], `${file.name.replace(/\.pdf$/i, "")}-${etiqueta}.pdf`, { type: "application/pdf" });
-      const requerimientosExpand = expandirRequerimientosPorDestino(b.requerimientos, b.destino);
+      const requerimientosExpand = expandirRequerimientosPorDestino(b.requerimientos, b.destino, b.meta || null);
       archivosPorBloque.push({
         archivo,
         requerimientos: requerimientosExpand,

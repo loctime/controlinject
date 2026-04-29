@@ -1837,6 +1837,7 @@ Además, extraé de cada página nueva (si es legible):
 - apellido (si podés, apellido + nombre completo del empleado en el campo apellido)
 - nombre
 - CUIL del empleado
+- entidades_mencionadas: array con nombres completos y/o patentes que aparezcan en la página
 
 Si una página definitivamente no es ningún tipo de formulario de ningún Ref → bloque: null.
 
@@ -1845,8 +1846,8 @@ IMPORTANTE: reportá TODAS las páginas nuevas en el JSON, incluso las que no co
 Respondé SOLO JSON válido, sin texto extra:
 {
   "paginas": [
-    { "pagina_nueva": 1, "apellido": "FERNANDEZ DIEGO ARIEL", "nombre": "", "cuil_leido": "20-12345678-9", "bloque": "Ref 1" },
-    { "pagina_nueva": 2, "apellido": "", "nombre": "", "cuil_leido": "", "bloque": null }
+    { "pagina_nueva": 1, "apellido": "FERNANDEZ DIEGO ARIEL", "nombre": "", "cuil_leido": "20-12345678-9", "entidades_mencionadas": ["FERNANDEZ DIEGO ARIEL", "MATESIN GENARO"], "bloque": "Ref 1" },
+    { "pagina_nueva": 2, "apellido": "", "nombre": "", "cuil_leido": "", "entidades_mencionadas": [], "bloque": null }
   ]
 }`
   });
@@ -1871,6 +1872,22 @@ Respondé SOLO JSON válido, sin texto extra:
   }
 
   if (!parsed?.paginas?.length) return null;
+
+  try {
+    const nombresLeidos = Array.from(new Set(
+      parsed.paginas
+        .map((p) => String(p?.apellido || "").trim())
+        .filter(Boolean)
+    ));
+    const entidadesLeidas = Array.from(new Set(
+      parsed.paginas
+        .flatMap((p) => Array.isArray(p?.entidades_mencionadas) ? p.entidades_mencionadas : [])
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+    ));
+    console.log("[MAU][DEBUG][IA] Nombres leidos en documento:", nombresLeidos);
+    console.log("[MAU][DEBUG][IA] Entidades mencionadas en documento:", entidadesLeidas);
+  } catch (_) {}
 
   // El código hace el match fino: CUIL leído por Claude vs CUIL almacenado en cada bloque de referencia
   const normCuil = (s) => String(s || "").replace(/\D/g, "");
@@ -1920,6 +1937,13 @@ Respondé SOLO JSON válido, sin texto extra:
       apellido: metaActual.apellido || String(item.apellido || "").trim(),
       nombre: metaActual.nombre || String(item.nombre || "").trim()
     };
+    const entidadesPag = Array.isArray(item.entidades_mencionadas)
+      ? item.entidades_mencionadas.map((x) => String(x || "").trim()).filter(Boolean)
+      : [];
+    if (entidadesPag.length) {
+      const prev = Array.isArray(metaActual.entidades_mencionadas) ? metaActual.entidades_mencionadas : [];
+      metaNuevo.entidades_mencionadas = Array.from(new Set([...prev, ...entidadesPag]));
+    }
     if (cuilLeido) metaNuevo.cuil = item.cuil_leido;
     bloquesMapIdx.get(refIdx).meta = metaNuevo;
     bloquesMapIdx.get(refIdx).paginas.push(item.pagina_nueva);
