@@ -1,0 +1,23 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      '@loctime/controlfile-sdk':
+        specifier: ^1.0.12
+        version: 1.0.12
+
+packages:
+
+  '@loctime/controlfile-sdk@1.0.12':
+    resolution: {integrity: sha512-0LwjsntTJBZq3ciSa6H2ubJ4v+BVlRlPHFVZRAaB4p6KtgzD24XaZoZjI3ny9q22Pe+XImffj8Lgf08AcJJhoQ==}
+    engines: {node: '>=18'}
+
+snapshots:
+
+  '@loctime/controlfile-sdk@1.0.12': {}

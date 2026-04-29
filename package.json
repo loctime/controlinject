@@ -1,0 +1,5 @@
+{
+	"dependencies": {
+		"@loctime/controlfile-sdk": "^1.0.12"
+	}
+}
