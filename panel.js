@@ -694,7 +694,7 @@
         );
         const recursoLabel = etiquetaRecurso(req.recurso);
         const op = document.createElement("option");
-        op.value = req.nombre + "||" + (req.recurso?.apellido || "");
+        op.value = req.nombre;
         const base = recursoLabel ? `${req.nombre} ← ${recursoLabel}` : req.nombre;
         op.textContent = ocupado ? `${base}  (ya tiene archivo)` : base;
         op.dataset.nombre = req.nombre;
@@ -976,15 +976,10 @@
    * @param {Object} [metadata] - Metadata OCR: { apellido, nombre, cuil, patente }.
    */
   function asignarArchivoARequerimiento(nombreReq, archivo, metadata) {
-    // Soporta clave compuesta "nombre||apellido" generada por el modal cuando hay duplicados.
-    let apellidoForzado = null;
+    // Compat legacy: algunos mapeos viejos guardaron "nombre||apellido".
     if (nombreReq.includes("||")) {
       const partes = nombreReq.split("||");
       nombreReq = partes[0];
-      apellidoForzado = partes[1];
-    }
-    if (apellidoForzado) {
-      metadata = Object.assign({}, metadata || {}, { apellido: apellidoForzado });
     }
 
     console.log(`[MAU][ASIGNAR] === Inicio asignación ===`);
@@ -1007,9 +1002,9 @@
       let candidatosFallback = estado.filas.filter(
         (f) => f.tipo === "requerimiento" && quitarPeriodo(f.requerimiento) === baseNombreReq
       );
-      // Si tenemos apellido forzado (o en metadata), preferir filas que tienen recurso con persona.
+      // Si tenemos metadata de persona, preferir filas que tienen recurso con persona.
       // Así evitamos caer en filas genéricas sin persona (recurso vacío).
-      const apellidoBusqueda = (apellidoForzado || metadata?.apellido || "").toLowerCase();
+      const apellidoBusqueda = (metadata?.apellido || "").toLowerCase();
       if (apellidoBusqueda && candidatosFallback.length > 1) {
         const conRecurso = candidatosFallback.filter((f) => f.recurso?.apellido);
         if (conRecurso.length > 0) candidatosFallback = conRecurso;
@@ -1044,34 +1039,26 @@
       // Única fila con este nombre → asignar directo.
       filaDestino = filasCoincidentes[0];
       console.log(`[MAU][ASIGNAR] Única fila → id=${filaDestino.id}`);
-    } else if (metadata && (metadata.apellido || metadata.cuil)) {
+    } else if (metadata && (metadata.apellido || metadata.nombre)) {
       // Múltiples filas con mismo nombre → usar metadata para elegir la correcta.
       // Construir nombre completo: apellido + nombre (ej: "FERNANDEZ DIEGO ARIEL")
       // para distinguir entre "FERNANDEZ ENRIQUE DARIO" y "FERNANDEZ DIEGO ARIEL".
       const metaNombreCompleto = [metadata.apellido, metadata.nombre].filter(Boolean).join(" ").toLowerCase();
       const metaApellido = metaNombreCompleto || (metadata.apellido || "").toLowerCase();
-      const metaCuil = (metadata.cuil || "").replace(/\D/g, "");
-      console.log(`[MAU][ASIGNAR] Buscando por metadata: nombre="${metaApellido}", cuil="${metaCuil}"`);
+      console.log(`[MAU][ASIGNAR] Buscando por metadata: nombre="${metaApellido}"`);
       for (const f of filasCoincidentes) {
         if (!f.recurso) continue;
         const recApellido = (f.recurso.apellido || "").toLowerCase();
-        const recCuil = (f.recurso.cuil || "").replace(/\D/g, "");
-        // 1) Match por CUIL exacto → máxima prioridad, cortar búsqueda
-        if (metaCuil && recCuil && metaCuil === recCuil) {
-          filaDestino = f;
-          console.log(`[MAU][ASIGNAR] Match CUIL exacto → id=${f.id}`);
-          break;
-        }
-        // 2) Match por nombre completo → preferir fila vacía sobre fila con archivo
+        // Match por nombre completo → preferir fila vacía sobre fila con archivo
         if (metaApellido && recApellido && (recApellido.includes(metaApellido) || metaApellido.includes(recApellido))) {
           const esMejorQueActual = !filaDestino || (f.archivo == null && filaDestino.archivo != null);
           if (esMejorQueActual) {
             filaDestino = f;
-            console.log(`[MAU][ASIGNAR] Match apellido → id=${f.id} vacía=${!f.archivo} (sigue buscando CUIL)`);
+            console.log(`[MAU][ASIGNAR] Match nombre completo → id=${f.id} vacía=${!f.archivo}`);
           }
         }
       }
-      // 3) Sin match por recurso → primera fila vacía, o cualquiera como último recurso
+      // Sin match por recurso → primera fila vacía, o cualquiera como último recurso
       if (!filaDestino) {
         filaDestino = filasCoincidentes.find((f) => !f.archivo) || filasCoincidentes[0];
         console.log(`[MAU][ASIGNAR] Sin match recurso, fallback vacía → id=${filaDestino.id}`);
@@ -2432,6 +2419,57 @@
     }
   }
 
+  function normalizarEntidadClave(s) {
+    return window.MAUStorage.normalizar(String(s || "")).replace(/\s+/g, " ").trim();
+  }
+
+  function extraerPatenteDeTexto(texto) {
+    const m = String(texto || "").toUpperCase().replace(/[^A-Z0-9]/g, " ").match(/\b([A-Z]{2,3}\s?\d{3}[A-Z]{0,2})\b/);
+    return m ? m[1].replace(/\s+/g, "") : "";
+  }
+
+  function expandirRequerimientosPorDestino(requerimientosBase, destino) {
+    const modo = destino?.modo || "uno";
+    const base = Array.isArray(requerimientosBase) ? [...requerimientosBase] : [];
+    if (!base.length || modo === "uno") return base;
+
+    const objetivos = new Set((destino?.entidadesObjetivo || []).map(normalizarEntidadClave).filter(Boolean));
+    const salida = [];
+    const conteoNombres = {};
+    (estado.requerimientos || []).forEach((r) => { conteoNombres[r.nombre] = (conteoNombres[r.nombre] || 0) + 1; });
+
+    const uidReq = (r) => r.nombre;
+
+    for (const req of base) {
+      const nombreBase = String(req || "");
+      const candidatos = (estado.requerimientos || []).filter((r) => r.nombre === nombreBase);
+      if (!candidatos.length) {
+        salida.push(req);
+        continue;
+      }
+      if (modo === "todas_las_entidades") {
+        candidatos.forEach((r) => salida.push(uidReq(r)));
+        continue;
+      }
+      if (modo === "entidades_especificas") {
+        let agregados = 0;
+        candidatos.forEach((r) => {
+          const nombreEntidad = [r.recurso?.apellido, r.recurso?.nombre].filter(Boolean).join(" ");
+          const patenteEntidad = extraerPatenteDeTexto(r.nombre);
+          const claves = [normalizarEntidadClave(nombreEntidad), normalizarEntidadClave(patenteEntidad)].filter(Boolean);
+          if (claves.some((k) => objetivos.has(k))) {
+            salida.push(uidReq(r));
+            agregados++;
+          }
+        });
+        if (agregados === 0) salida.push(req);
+        continue;
+      }
+      salida.push(req);
+    }
+    return [...new Set(salida)];
+  }
+
   async function aplicarBloquesModal(file, bloques) {
     ui.pText.textContent = "Dividiendo PDF…";
     // Armar mapeos para dividirPdfPorRangos: cada bloque genera UN archivo con sus páginas.
@@ -2453,7 +2491,13 @@
       const out = await nuevo.save();
       const etiqueta = (b.nombre || "bloque").replace(/[/\\?%*:|"<>]/g, "-").slice(0, 60);
       const archivo = new File([out], `${file.name.replace(/\.pdf$/i, "")}-${etiqueta}.pdf`, { type: "application/pdf" });
-      archivosPorBloque.push({ archivo, requerimientos: b.requerimientos, meta: b.meta || null });
+      const requerimientosExpand = expandirRequerimientosPorDestino(b.requerimientos, b.destino);
+      archivosPorBloque.push({
+        archivo,
+        requerimientos: requerimientosExpand,
+        meta: b.meta || null,
+        destino: b.destino || { modo: "uno", entidadesObjetivo: [] }
+      });
     }
 
     // Asignar cada archivo a sus requerimientos (uno puede ir a varios)
@@ -2610,27 +2654,21 @@
           return; // No continuar sin Claude
         }
 
-        // Armar texto estable por bloque y poblar meta desde OCR de Claude.
-        // La meta (apellido, cuil, patente, etc.) viene de la primera página del bloque
-        // que tenga datos relevantes — esto permite que asignarArchivoARequerimiento
-        // elija la fila correcta cuando hay varios empleados con el mismo requerimiento.
+        // Armar texto estable por bloque.
+        // El mapeo guarda solo estructura (bloques + requerimientos), sin persona.
+        // La persona se detecta en tiempo de trabajo.
         const bloquesConTexto = bloques.map((b) => {
           const textoBloque = b.paginas
             .map((p) => textosPorPagina.find((t) => t.pagina === p)?.textoEstable || "")
             .filter(Boolean)
             .join(" ");
-          const metaPagina = b.paginas
-            .map((p) => textosPorPagina.find((t) => t.pagina === p))
-            .find((t) => t && (t.apellido || t.cuil || t.patente));
-          const meta = metaPagina
-            ? { apellido: metaPagina.apellido || "", nombre: metaPagina.nombre || "", cuil: metaPagina.cuil || "", patente: metaPagina.patente || "", periodo: metaPagina.periodo || "" }
-            : (b.meta || {});
           return {
             nombre: b.nombre,
             paginas: b.paginas,
             requerimientos: b.requerimientos,
+            destino: b.destino || { modo: "uno", entidadesObjetivo: [] },
             textoEstableBloque: textoBloque,
-            meta
+            meta: {}
           };
         });
 
@@ -2667,6 +2705,7 @@
                 nombre: b.nombre,
                 paginas: b.paginas,
                 requerimientos: b.requerimientos,
+                destino: b.destino || { modo: "uno", entidadesObjetivo: [] },
                 meta: b.meta || {}
               }))
             });

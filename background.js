@@ -1793,7 +1793,7 @@ async function compararPaginasConReferencia(nuevasPaginas, referencia) {
 
   // Log diagnóstico: cuántas imágenes de referencia tiene cada bloque
   bloquesRef.forEach((b, idx) => {
-    console.log(`[MAU] Ref ${idx+1} "${b.meta?.apellido || b.nombre}": ${b.imagenesRef.length} imagen(es) de referencia, páginas del mapeo: [${(b.paginas||[]).join(",")}]`);
+    console.log(`[MAU] Ref ${idx+1} "${b.nombre}": ${b.imagenesRef.length} imagen(es) de referencia, páginas del mapeo: [${(b.paginas||[]).join(",")}]`);
   });
   console.log(`[MAU] Páginas nuevas a comparar: ${nuevasPaginas.length}`);
 
@@ -1801,11 +1801,9 @@ async function compararPaginasConReferencia(nuevasPaginas, referencia) {
   const content = [];
 
   // Mostrar referencias con TODAS sus páginas para que Claude reconozca cada tipo de formulario del bloque
-  content.push({ type: "text", text: "BLOQUES DE REFERENCIA (todas las páginas del bloque, con CUIL del empleado):\n" });
+  content.push({ type: "text", text: "BLOQUES DE REFERENCIA (todas las páginas del bloque):\n" });
   bloquesRef.forEach((b, idx) => {
-    const cuil = b.meta?.cuil ? `CUIL: ${b.meta.cuil}` : "CUIL: (no registrado)";
-    const apellido = b.meta?.apellido || "";
-    content.push({ type: "text", text: `\nRef ${idx + 1}: ${apellido} — ${cuil} (${b.imagenesRef.length} tipo(s) de formulario en este bloque)` });
+    content.push({ type: "text", text: `\nRef ${idx + 1}: ${b.nombre || "Bloque"} (${b.imagenesRef.length} tipo(s) de formulario en este bloque)` });
     b.imagenesRef.forEach((imgBase64, pIdx) => {
       content.push({ type: "text", text: `  Formulario ${pIdx + 1} de Ref ${idx + 1}:` });
       content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: imgBase64 } });
@@ -1835,10 +1833,10 @@ Una página nueva pertenece a un Ref si es del MISMO TIPO de formulario que algu
 No importa el orden en que vienen las páginas, la calidad del scan, ni pequeñas diferencias de contenido.
 Lo que importa es si es el MISMO TIPO de formulario.
 
-CUIL (identificador del empleado):
-Si la página tiene un CUIL legible, usalo para confirmar a qué Ref pertenece.
-Si el CUIL no es legible o no aparece, hacé el match solo por tipo de formulario.
-Un CUIL distinto al del Ref = la página pertenece al Ref con ese CUIL, no al que asignaste visualmente.
+Además, extraé de cada página nueva (si es legible):
+- apellido (si podés, apellido + nombre completo del empleado en el campo apellido)
+- nombre
+- CUIL del empleado
 
 Si una página definitivamente no es ningún tipo de formulario de ningún Ref → bloque: null.
 
@@ -1847,8 +1845,8 @@ IMPORTANTE: reportá TODAS las páginas nuevas en el JSON, incluso las que no co
 Respondé SOLO JSON válido, sin texto extra:
 {
   "paginas": [
-    { "pagina_nueva": 1, "cuil_leido": "20-12345678-9", "bloque": "Ref 1" },
-    { "pagina_nueva": 2, "cuil_leido": "", "bloque": null }
+    { "pagina_nueva": 1, "apellido": "FERNANDEZ DIEGO ARIEL", "nombre": "", "cuil_leido": "20-12345678-9", "bloque": "Ref 1" },
+    { "pagina_nueva": 2, "apellido": "", "nombre": "", "cuil_leido": "", "bloque": null }
   ]
 }`
   });
@@ -1901,35 +1899,29 @@ Respondé SOLO JSON válido, sin texto extra:
     if (refIdx === -1) continue;
     let refBloque = bloquesRef[refIdx];
 
-    // Validación por CUIL: si el CUIL leído no coincide con el bloque que indicó Claude,
-    // buscamos el bloque correcto por CUIL
+    // No usamos CUIL/CUIT para reasignar empleados.
+    // El criterio principal es match visual del formulario + nombre completo detectado luego.
     const cuilLeido = normCuil(item.cuil_leido);
-    const cuilBloque = normCuil(refBloque.meta?.cuil);
 
-    if (cuilLeido && cuilBloque && cuilLeido !== cuilBloque) {
-      const corrIdx = bloquesRef.findIndex((b) => normCuil(b.meta?.cuil) === cuilLeido);
-      if (corrIdx !== -1) {
-        console.log(`[MAU] Pág ${item.pagina_nueva}: CUIL ${cuilLeido} reasignado de Ref ${refIdx+1} → Ref ${corrIdx+1} (${bloquesRef[corrIdx].meta?.apellido || ""})`);
-        refIdx = corrIdx;
-        refBloque = bloquesRef[corrIdx];
-      } else {
-        // El CUIL leído no es de ningún empleado conocido (puede ser el CUIL del empleador
-        // que aparece impreso en el documento). En ese caso confiamos en el match visual de Claude.
-        console.log(`[MAU] Pág ${item.pagina_nueva}: CUIL ${cuilLeido} no es de ningún empleado conocido (posiblemente CUIL del empleador) → se mantiene asignación visual a Ref ${refIdx+1} (${refBloque.meta?.apellido || ""})`);
-      }
-    }
-
-    console.log(`[MAU] Pág ${item.pagina_nueva} → Ref ${refIdx+1} "${refBloque.meta?.apellido || refBloque.nombre}" CUIL=${cuilLeido || "(sin cuil)"}`);
+    console.log(`[MAU] Pág ${item.pagina_nueva} → Ref ${refIdx+1} "${refBloque.nombre || "Bloque"}" CUIL=${cuilLeido || "(sin cuil)"}`);
     if (!bloquesMapIdx.has(refIdx)) {
       bloquesMapIdx.set(refIdx, {
         nombre: refBloque.nombre,
         paginas: [],
         paginasMapeo: (refBloque.paginas || []).length, // cuántas páginas tiene este bloque en el mapeo
         requerimientos: refBloque.requerimientos || [],
-        meta: { ...refBloque.meta }
+        destino: refBloque.destino || { modo: "uno", entidadesObjetivo: [] },
+        meta: {}
       });
     }
-    if (cuilLeido) bloquesMapIdx.get(refIdx).meta = { ...bloquesMapIdx.get(refIdx).meta, cuil: item.cuil_leido };
+    const metaActual = bloquesMapIdx.get(refIdx).meta || {};
+    const metaNuevo = {
+      ...metaActual,
+      apellido: metaActual.apellido || String(item.apellido || "").trim(),
+      nombre: metaActual.nombre || String(item.nombre || "").trim()
+    };
+    if (cuilLeido) metaNuevo.cuil = item.cuil_leido;
+    bloquesMapIdx.get(refIdx).meta = metaNuevo;
     bloquesMapIdx.get(refIdx).paginas.push(item.pagina_nueva);
   }
 
@@ -1940,7 +1932,7 @@ Respondé SOLO JSON válido, sin texto extra:
   const resultado = Array.from(bloquesMapIdx.values()).filter((b) => {
     if (!b.paginas.length || !b.requerimientos.length) return false;
     if (b.paginasMapeo > 0 && b.paginas.length < b.paginasMapeo) {
-      console.log(`[MAU] Bloque "${b.meta?.apellido || b.nombre}" descartado: encontradas ${b.paginas.length}/${b.paginasMapeo} páginas del mapeo`);
+      console.log(`[MAU] Bloque "${b.nombre}" descartado: encontradas ${b.paginas.length}/${b.paginasMapeo} páginas del mapeo`);
       descartados.push(b);
       return false;
     }

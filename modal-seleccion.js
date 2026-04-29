@@ -10,7 +10,11 @@
  *   });
  *
  * Cada bloque devuelto tiene la forma:
- *   { nombre, paginas:number[], requerimientos:string[], meta:{cuil,apellido,nombre,patente,periodo} }
+ *   {
+ *     nombre, paginas:number[], requerimientos:string[],
+ *     destino:{ modo:"uno"|"entidades_especificas"|"todas_las_entidades", entidadesObjetivo:string[] },
+ *     meta:{cuil,apellido,nombre,patente,periodo}
+ *   }
  */
 (function () {
   const CSS = `
@@ -252,6 +256,10 @@
       nombre: b.nombre || "Bloque",
       paginas: [...(b.paginas || [])],
       requerimientos: [...(b.requerimientos || [])],
+      destino: {
+        modo: b.destino?.modo || "uno",
+        entidadesObjetivo: Array.isArray(b.destino?.entidadesObjetivo) ? [...b.destino.entidadesObjetivo] : []
+      },
       meta: b.meta || {}
     }));
     renderBloques();
@@ -567,6 +575,7 @@
       nombre: nombreSugerido,
       paginas,
       requerimientos: [],
+      destino: { modo: "uno", entidadesObjetivo: [] },
       meta
     });
 
@@ -611,31 +620,11 @@
     for (const b of ctx.bloques) {
       const div = document.createElement("div");
       div.className = "mau-bloque";
-      const metaStr = [
-        b.meta.apellido && `Apellido: ${b.meta.apellido}`,
-        b.meta.cuil && `CUIL: ${b.meta.cuil}`,
-        b.meta.patente && `Patente: ${b.meta.patente}`,
-        b.meta.periodo && `Período: ${b.meta.periodo}`
-      ].filter(Boolean).join(" · ");
-
-      // Detectar nombres duplicados para generar UIDs compuestos.
-      const conteoNombres = {};
-      (ctx.requerimientos || []).forEach((r) => { conteoNombres[r.nombre] = (conteoNombres[r.nombre] || 0) + 1; });
-      const uidReq = (r) => {
-        if (conteoNombres[r.nombre] > 1 && r.recurso?.apellido) return `${r.nombre}||${r.recurso.apellido}`;
-        return r.nombre;
-      };
+      const metaStr = "";
 
       const reqsHtml = (ctx.requerimientos || []).map((r) => {
-        const uid = uidReq(r);
-        const checked = (b.requerimientos.includes(uid) || (uid !== r.nombre && b.requerimientos.includes(r.nombre))) ? "checked" : "";
-        const recursoLabel = r.recurso && (r.recurso.apellido || r.recurso.nombre)
-          ? ` <span style="color:#888;font-size:11px;">${[r.recurso.apellido, r.recurso.nombre].filter(Boolean).join(" ")}</span>`
-          : "";
-        const labelTexto = conteoNombres[r.nombre] > 1
-          ? `${escapeHtml(r.nombre)}${recursoLabel || " <span style=\"color:#888;font-size:11px;\">(sin datos de recurso)</span>"}`
-          : `${escapeHtml(r.nombre)}${recursoLabel}`;
-        return `<label><input type="checkbox" data-req="${escapeHtml(uid)}" ${checked}/> ${labelTexto}</label>`;
+        const checked = b.requerimientos.includes(r.nombre) ? "checked" : "";
+        return `<label><input type="checkbox" data-req="${escapeHtml(r.nombre)}" ${checked}/> ${escapeHtml(r.nombre)}</label>`;
       }).join("") || `<div style="font-size:11px;color:#888;">No hay requerimientos detectados en la bandeja.</div>`;
 
       div.innerHTML = `
@@ -646,6 +635,14 @@
         <input type="text" data-nombre="${b.id}" value="${escapeHtml(b.nombre)}" />
         <div class="mau-paginas">Páginas: ${b.paginas.join(", ")}</div>
         ${metaStr ? `<div class="mau-meta">${escapeHtml(metaStr)}</div>` : ""}
+        <label>Modo de destino:</label>
+        <select data-destino-modo="${b.id}" style="width:100%;padding:4px 6px;border:1px solid #c0c4c8;border-radius:3px;font-size:11px;margin-bottom:4px;">
+          <option value="uno" ${(b.destino?.modo || "uno") === "uno" ? "selected" : ""}>Un requerido</option>
+          <option value="entidades_especificas" ${(b.destino?.modo || "uno") === "entidades_especificas" ? "selected" : ""}>Requerido para entidades especÃ­ficas</option>
+          <option value="todas_las_entidades" ${(b.destino?.modo || "uno") === "todas_las_entidades" ? "selected" : ""}>Requerido para todas las entidades</option>
+        </select>
+        <label style="margin-top:0;">Entidades objetivo (modo especÃ­ficas):</label>
+        <input type="text" data-destino-entidades="${b.id}" value="${escapeHtml((b.destino?.entidadesObjetivo || []).join(", "))}" placeholder="Ej: FERNANDEZ DIEGO ARIEL, AB123CD" style="width:100%;padding:4px 6px;border:1px solid #c0c4c8;border-radius:3px;font-size:11px;margin-bottom:4px;" />
         <label>Subir a estos requerimientos:</label>
         <input type="text" class="mau-req-search" data-buscar="${b.id}" placeholder="Buscar requerimiento…" />
         <div class="mau-req-list" data-reqs="${b.id}">${reqsHtml}</div>
@@ -679,6 +676,27 @@
         lista.querySelectorAll("label").forEach((lbl) => {
           lbl.style.display = !q || lbl.textContent.toLowerCase().includes(q) ? "" : "none";
         });
+      });
+    });
+    cont.querySelectorAll("select[data-destino-modo]").forEach((sel) => {
+      sel.addEventListener("change", () => {
+        const id = parseInt(sel.dataset.destinoModo, 10);
+        const b = ctx.bloques.find((x) => x.id === id);
+        if (!b) return;
+        if (!b.destino) b.destino = { modo: "uno", entidadesObjetivo: [] };
+        b.destino.modo = sel.value || "uno";
+      });
+    });
+    cont.querySelectorAll("input[data-destino-entidades]").forEach((inp) => {
+      inp.addEventListener("input", () => {
+        const id = parseInt(inp.dataset.destinoEntidades, 10);
+        const b = ctx.bloques.find((x) => x.id === id);
+        if (!b) return;
+        if (!b.destino) b.destino = { modo: "uno", entidadesObjetivo: [] };
+        b.destino.entidadesObjetivo = String(inp.value || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
       });
     });
 
@@ -718,6 +736,10 @@
         nombre: b.nombre,
         paginas: [...b.paginas].sort((a, b) => a - b),
         requerimientos: [...b.requerimientos],
+        destino: {
+          modo: b.destino?.modo || "uno",
+          entidadesObjetivo: Array.isArray(b.destino?.entidadesObjetivo) ? [...b.destino.entidadesObjetivo] : []
+        },
         meta: { ...b.meta }
       }));
 
