@@ -1,7 +1,7 @@
-# Control-Matesin — Estado del proyecto (para Codex)
+# Control Documentario — Estado del proyecto (para Codex)
 
 ## Qué es esto
-Extensión de Chrome (Manifest V3) que automatiza la subida de documentos PDF a controldocumentario.com para la empresa Matesin. Usa Codex API (Codex-haiku-4-5) para identificar documentos y asignarlos a las personas correctas.
+Extensión de Chrome (Manifest V3) que automatiza la subida de documentos PDF a controldocumentario.com para la empresa empresa. Usa Codex API (Codex-haiku-4-5) para identificar documentos y asignarlos a las personas correctas.
 
 ## Archivos clave
 
@@ -33,7 +33,7 @@ Extensión de Chrome (Manifest V3) que automatiza la subida de documentos PDF a 
    - Devuelve bloques con `{ nombre, paginas, requerimientos, meta }`
 4. `asignarArchivoARequerimiento` asigna el PDF cortado a la fila correcta de CD:
    - Usa **nombre completo** (`apellido + nombre`) para distinguir personas con mismo apellido
-   - Ej: "FERNANDEZ DIEGO ARIEL" vs "FERNANDEZ ENRIQUE DARIO"
+   - Ej: "APELLIDO UNO NOMBRE UNO" vs "APELLIDO UNO NOMBRE DOS"
 
 ### Telegram
 - `tgManejarDocumento` — mismo flujo que local: descarga → renderiza → compara → asigna
@@ -54,7 +54,7 @@ El campo `imagenesRef` (array) reemplaza a `base64Ref` (string único). El fallb
 Los bloques en el mapeo se llaman todos "Bloque" (nombre por defecto del modal). Si se usara el nombre como clave del Map, todos colapsarían. Se usa el índice en `bloquesRef` como clave.
 
 ### parsearRecurso usa nombre completo como apellido
-En panel.js, `parsearRecurso()` extrae el nombre completo del empleado (ej: "FERNANDEZ DIEGO ARIEL") y lo guarda entero en `recurso.apellido`. Antes solo guardaba la primera palabra.
+En panel.js, `parsearRecurso()` extrae el nombre completo del empleado (ej: "APELLIDO UNO NOMBRE UNO") y lo guarda entero en `recurso.apellido`. Antes solo guardaba la primera palabra.
 
 ### Matching de persona usa apellido + nombre
 En `asignarArchivoARequerimiento`, para elegir la fila correcta entre múltiples personas con el mismo apellido, se construye `metaNombreCompleto = apellido + " " + nombre` desde la metadata del bloque.
@@ -89,14 +89,14 @@ Los PDFs que se suben en Trabajar NO necesitan tener siempre los mismos document
 - Match de persona usaba solo apellido → ahora apellido + nombre completo
 - Fallback de período no usaba recurso para filtrar → ahora prefiere filas con persona
 - tgRenderPdfEnImagenes devolvía `[base64]` no `[{pagina, base64}]` → corregido
-- FERNANDEZ DIEGO vs FERNANDEZ ENRIQUE se confundían → solucionado con nombre completo en parsearRecurso + metaNombreCompleto en asignarArchivoARequerimiento
+- APELLIDO UNO DIEGO vs APELLIDO UNO ENRIQUE se confundían → solucionado con nombre completo en parsearRecurso + metaNombreCompleto en asignarArchivoARequerimiento
 - Bloque de 3 páginas subía solo 2 → Codex recibía solo 1 imagen de referencia por bloque (la primera página). Corregido: ahora se mandan TODAS las imágenes del bloque. Codex puede reconocer cualquier formulario del bloque, no solo el primero.
 
 ## Cosas que NO hacer
-- No agregar clasificación de documentos por texto (TIPOS_DOCUMENTO está en background.js pero NO se usa para el flujo principal de matching — solo el mapeo visual manda)
+- No agregar clasificación de documentos por texto (reglas de tipos legacy está en background.js pero NO se usa para el flujo principal de matching — solo el mapeo visual manda)
 - No agregar llamadas extra a Codex por página (costo)
 - No cambiar el flujo de 1 llamada a multi-llamada
-- No confundir el CUIL del empleado (en el documento) con el CUIL del empleador (en las filas de CD, que es siempre el de Matesin). En los documentos aparece el CUIL del empleador impreso como empresa — si Codex lee ese CUIL y no matchea ningún bloque, NO descartar la página: confiar en el match visual. Solo redirigir si el CUIL leído matchea un bloque DIFERENTE al que asignó Codex.
+- No confundir el CUIL del empleado (en el documento) con el CUIL del empleador (en las filas de CD, que es siempre el de empresa). En los documentos aparece el CUIL del empleador impreso como empresa — si Codex lee ese CUIL y no matchea ningún bloque, NO descartar la página: confiar en el match visual. Solo redirigir si el CUIL leído matchea un bloque DIFERENTE al que asignó Codex.
 - NO descartar bloques válidos de otras personas si una persona tiene páginas faltantes. La validación es POR BLOQUE, no global.
 - No agregar chain-of-thought al prompt de Codex para matching — empeora las asignaciones porque Codex se convence a sí mismo de cosas incorrectas. El prompt debe ser directo y simple.
 
@@ -104,12 +104,12 @@ Los PDFs que se suben en Trabajar NO necesitan tener siempre los mismos document
 - **El mapeo manda**: si una página coincide visualmente con un bloque del mapeo, se sube. Si no coincide, no se sube. No hay fallback por texto ni por tipo de documento.
 - **Listas cortas son válidas**: si el PDF tiene 3 personas de las 10 del mapeo, se suben esas 3. No es error.
 - **Si falta una página de un bloque**: el bloque se DESCARTA completo. Si el mapeo dice que ese bloque tiene 3 páginas y solo se encontraron 2, no se sube nada de ese bloque. El usuario debe subir el PDF completo para ese bloque.
-- **La validación es por bloque, no global**: si MATESIN tiene las 3 páginas completas y FERNANDEZ solo tiene 2 de 3, MATESIN se sube igual y FERNANDEZ se descarta.
+- **La validación es por bloque, no global**: si EMPRESA tiene las 3 páginas completas y APELLIDO UNO solo tiene 2 de 3, EMPRESA se sube igual y APELLIDO UNO se descarta.
 - **CUIL como validación, no como matching principal**: Codex hace el match visual, el código valida/corrige con CUIL si hay discrepancia.
 
 ## Estado actual
 - Matching por imagen + CUIL: funcionando ✓
-- Asignación por persona (apellido completo): funcionando ✓ (FERNANDEZ DIEGO vs FERNANDEZ ENRIQUE resuelto)
+- Asignación por persona (apellido completo): funcionando ✓ (APELLIDO UNO DIEGO vs APELLIDO UNO ENRIQUE resuelto)
 - Telegram: funcionando ✓ — flujo completo con confirmación antes de subir y resultado real al terminar
 - Codex recibe TODAS las imágenes de referencia por bloque: funcionando ✓ (páginas desordenadas reconocidas)
 - CUIL del empleador no descarta páginas: funcionando ✓ (confía en match visual cuando el CUIL no es de ningún empleado)

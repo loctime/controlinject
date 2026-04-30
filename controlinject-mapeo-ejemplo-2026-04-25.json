@@ -20,7 +20,7 @@
           "requerimientos": [
             "F 931"
           ],
-          "textoEstableBloque": "CLAUDIO FABIAN MATESIN F931 ARCA DECLARACIÓN JURADA SEGURIDAD SOCIAL"
+          "textoEstableBloque": "PERSONA EJEMPLO EMPRESA F931 ORGANISMO DECLARACIÓN JURADA SEGURIDAD SOCIAL"
         },
         {
           "meta": {
@@ -38,7 +38,7 @@
           "requerimientos": [
             "Pago f 931"
           ],
-          "textoEstableBloque": "DECLARACIÓN LÍNEA CONSULTA NÓMINA DECLARACIONES JURADAS MATESIN"
+          "textoEstableBloque": "DECLARACIÓN LÍNEA CONSULTA NÓMINA DECLARACIONES JURADAS EMPRESA"
         },
         {
           "meta": {
@@ -58,7 +58,7 @@
           "requerimientos": [
             "Pago f 931"
           ],
-          "textoEstableBloque": "ARCA Presentación DJ por Internet Acuse de Recibo F931 EMPLEADOR DJ MENSUAL VEP VOLANTE ELECTRÓNICO PAGO ARCA SICOSS EMPLEADORES SALDO DJ PAGO F931 SICOSS CONTRIBUCIONES APORTES SEGURIDAD SOCIAL BANCO PROVINCIA"
+          "textoEstableBloque": "ORGANISMO Presentación DJ por Internet Acuse de Recibo F931 EMPLEADOR DJ MENSUAL VEP VOLANTE ELECTRÓNICO PAGO ORGANISMO SICOSS EMPLEADORES SALDO DJ PAGO F931 SICOSS CONTRIBUCIONES APORTES SEGURIDAD SOCIAL Banco"
         },
         {
           "meta": {
@@ -78,11 +78,11 @@
           "requerimientos": [
             "Pago aportes sindicales"
           ],
-          "textoEstableBloque": "BOLETA DEPOSITO UOCRA MATESIN CLAUDIO FABIAN CUOTA SINDICAL COMPROBANTE PRESENTACIÓN DECLARACIÓN JURADA NOMINATIVA UOCRA MATESIN CLAUDIO FABIAN PAGO UOCRA ONLINE BANCO PROVINCIA OPERACIÓN REALIZADA CON ÉXITO"
+          "textoEstableBloque": "BOLETA DEPOSITO ENTIDAD EMPRESA EJEMPLO CUOTA SINDICAL COMPROBANTE PRESENTACIÓN DECLARACIÓN JURADA NOMINATIVA ENTIDAD EMPRESA EJEMPLO PAGO ENTIDAD ONLINE Banco OPERACIÓN REALIZADA CON ÉXITO"
         },
         {
           "meta": {
-            "apellido": "FERNANDEZ",
+            "apellido": "APELLIDO UNO",
             "cuil": "20-27742705-3",
             "nombre": "DIEGO ARIEL",
             "patente": "",
@@ -95,16 +95,16 @@
             13
           ],
           "requerimientos": [
-            "Recibos de haberes ram-2026-3||FERNANDEZ",
-            "Aportes fdo. cese laboral ram-2026-3||FERNANDEZ"
+            "Recibos de haberes ram-2026-3||APELLIDO UNO",
+            "Aportes fdo. cese laboral ram-2026-3||APELLIDO UNO"
           ],
-          "textoEstableBloque": "FERNANDEZ DIEGO ARIEL RECIBO HABERES MATESIN CLAUDIO LINEAS INSTALACION FERNANDEZ DIEGO ARIEL RECIBO HABERES OFICIAL OPERADOR MATESIN RAMA RAMALLO DIEGO ARIEL FERNANDEZ NUEVA TRANSFERENCIA VAR FONDO DESEMPLEO BANCO PROVINCIA"
+          "textoEstableBloque": "APELLIDO UNO NOMBRE UNO RECIBO HABERES EMPRESA PERSONA LINEAS INSTALACION APELLIDO UNO NOMBRE UNO RECIBO HABERES OFICIAL OPERADOR EMPRESA RAMA RAMALLO DIEGO ARIEL APELLIDO UNO NUEVA TRANSFERENCIA VAR FONDO DESEMPLEO Banco"
         },
         {
           "meta": {
-            "apellido": "MATESIN",
+            "apellido": "EMPRESA",
             "cuil": "20-40917465-6",
-            "nombre": "GENARO",
+            "nombre": "NOMBRE EJEMPLO",
             "patente": "",
             "periodo": "2026-03"
           },
@@ -115,14 +115,14 @@
             16
           ],
           "requerimientos": [
-            "Recibos de haberes ram-2026-3||MATESIN",
-            "Aportes fdo. cese laboral ram-2026-3||MATESIN"
+            "Recibos de haberes ram-2026-3||EMPRESA",
+            "Aportes fdo. cese laboral ram-2026-3||EMPRESA"
           ],
-          "textoEstableBloque": "MATESIN GENARO RECIBO HABERES MATESIN CONSTRUCCION LINEAS INSTALACION MATESIN GENARO RECIBO HABERES RAMA RAMALLO LINEAS INSTALACION GENARO MATESIN NUEVA TRANSFERENCIA DESEMPLEO BANCO PROVINCIA VAR"
+          "textoEstableBloque": "EMPRESA NOMBRE EJEMPLO RECIBO HABERES EMPRESA CONSTRUCCION LINEAS INSTALACION EMPRESA NOMBRE EJEMPLO RECIBO HABERES RAMA RAMALLO LINEAS INSTALACION NOMBRE EJEMPLO EMPRESA NUEVA TRANSFERENCIA DESEMPLEO Banco VAR"
         },
         {
           "meta": {
-            "apellido": "FERNANDEZ",
+            "apellido": "APELLIDO UNO",
             "cuil": "20-26761227-8",
             "nombre": "ENRIQUE DARIO",
             "patente": "",
@@ -135,10 +135,10 @@
             19
           ],
           "requerimientos": [
-            "Aportes fdo. cese laboral ram-2026-3||FERNANDEZ",
-            "Recibos de haberes ram-2026-2||FERNANDEZ"
+            "Aportes fdo. cese laboral ram-2026-3||APELLIDO UNO",
+            "Recibos de haberes ram-2026-2||APELLIDO UNO"
           ],
-          "textoEstableBloque": "FERNANDEZ ENRIQUE DARIO RECIBO HABERES MATESIN CUCARULO RAMA RAMALLO FERNANDEZ ENRIQUE DARIO RECIBO HABERES MATESIN UOCRA MARZO 2026 FERNANDEZ ENRIQUE DARIO NUEVA TRANSFERENCIA VAR FONDO DESEMPLEO MATESIN"
+          "textoEstableBloque": "APELLIDO UNO NOMBRE DOS RECIBO HABERES EMPRESA CUCARULO RAMA RAMALLO APELLIDO UNO NOMBRE DOS RECIBO HABERES EMPRESA ENTIDAD MARZO 2026 APELLIDO UNO NOMBRE DOS NUEVA TRANSFERENCIA VAR FONDO DESEMPLEO EMPRESA"
         }
       ],
       "firmaTipos": [

@@ -268,7 +268,7 @@ document.getElementById("exportar-mapeo").addEventListener("click", async () => 
     const a = document.createElement("a");
     const fecha = new Date().toISOString().slice(0, 10);
     a.href = url;
-    a.download = `matesin-mapeo-${fecha}.json`;
+    a.download = `controldoc-mapeo-${fecha}.json`;
     a.click();
     URL.revokeObjectURL(url);
     const nPatrones = (r.patrones_sabana || []).length;

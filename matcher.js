@@ -1,17 +1,4 @@
 (function () {
-  const reglas = [
-    { id: "f931", claves: ["f931", "f 931", "formulario 931", "formulario931"], contiene: "f 931", etiquetaBloque: "F 931" },
-    { id: "nomina_f931", claves: ["nomina f 931", "nomina f931", "nomina del personal", "nomina personal", "n mina"], contiene: "nomina f 931", etiquetaBloque: "Nomina F 931" },
-    { id: "aportes", claves: ["aportes sindicales", "sindicales", "aportes"], contiene: "aportes sindicales", etiquetaBloque: "Aportes sindicales" },
-    { id: "capacitacion", claves: ["capacitacion", "capacitaci n", "asistencia", "planilla de asistencia"], contiene: "capacitacion", etiquetaBloque: "Capacitacion" },
-    { id: "grua", claves: ["credencial", "operador de grua", "grua", "gruas"], contiene: "credencial op. gruas", etiquetaBloque: "Credencial gruas" },
-    { id: "seguro_rc", claves: ["responsabilidad civil", "seguro rc", "poliza rc", "seguro de responsabilidad"], contiene: "seguro de responsabilidad civil", etiquetaBloque: "Seguro RC" },
-    { id: "clausula", claves: ["clausula no repeticion", "no repeticion", "clausula"], contiene: "clausula no repeticion", etiquetaBloque: "Clausula no repeticion" },
-    { id: "art_nomina", claves: ["constancia art", "art con nomina", "certificado afiliacion", "art nomina"], contiene: "constancia art con nomina", etiquetaBloque: "ART nomina" },
-    { id: "vida", claves: ["vida obligatorio", "decreto 1567", "seguro de vida"], contiene: "seguro de vida obligatorio", etiquetaBloque: "Seguro vida obligatorio" },
-    { id: "entrega_epp", claves: ["entrega epp", "entrega de epp", "elementos de proteccion personal", "ropa de trabajo", "resolucion 299", "epp"], contiene: "entrega epp", etiquetaBloque: "Entrega EPP" }
-  ];
-
   function normalizar(texto) {
     return (texto || "")
       .toLowerCase()
@@ -28,26 +15,6 @@
     let inter = 0;
     for (const t of sa) if (sb.has(t)) inter++;
     return inter / Math.max(sa.size, sb.size);
-  }
-
-  function reglaParaTexto(textoNormalizado) {
-    let mejor = null;
-    let mejorPuntaje = 0;
-    for (const regla of reglas) {
-      let puntaje = 0;
-      for (const k of regla.claves) {
-        const kn = normalizar(k);
-        if (!kn) continue;
-        if (textoNormalizado.includes(kn)) {
-          puntaje += kn.split(" ").length;
-        }
-      }
-      if (puntaje > mejorPuntaje) {
-        mejorPuntaje = puntaje;
-        mejor = regla;
-      }
-    }
-    return mejorPuntaje > 0 ? mejor : null;
   }
 
   /**
@@ -70,19 +37,6 @@
       typeof r === "string" ? { nombre: r, recurso: null } : r
     );
     const reqNombres = reqObjs.map((r) => r.nombre);
-
-    for (const regla of reglas) {
-      if (regla.claves.some((k) => nom.includes(normalizar(k)))) {
-        const candidatos = reqObjs.filter((r) => normalizar(r.nombre).includes(normalizar(regla.contiene)));
-        if (candidatos.length === 1) return candidatos[0].nombre;
-        if (candidatos.length > 1 && metadata) {
-          // Varios requerimientos con mismo tipo pero distinto Recurso → elegir por metadata.
-          const conRecurso = elegirPorRecurso(candidatos, metadata);
-          if (conRecurso) return conRecurso.nombre;
-        }
-        if (candidatos.length > 0) return candidatos[0].nombre;
-      }
-    }
 
     const patenteMatch = nom.match(/\b[a-z]{2,3}\d{3}\b|\b[a-z]{3}\d{3}\b/i);
     const patenteArchivo = patenteMatch ? patenteMatch[0].toLowerCase() : "";
@@ -183,5 +137,5 @@
     return mejorScore >= 5 ? mejor : null;
   }
 
-  window.MAUMatcher = { sugerirRequerimiento, normalizar, similitudSimple, reglaParaTexto, reglas, elegirPorRecurso };
+  window.MAUMatcher = { sugerirRequerimiento, normalizar, similitudSimple, elegirPorRecurso };
 })();

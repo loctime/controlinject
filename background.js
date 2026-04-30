@@ -1,31 +1,34 @@
 chrome.runtime.onInstalled.addListener(() => {
   console.log("DocAutomatización instalado correctamente.");
+  migrarStorageLegacy().catch((e) => console.warn("[ControlInject] Migracion legacy fallo:", e));
 });
 
-const KEY_MAPEOS = "matesin_mapeos_aprendidos";
-const KEY_PATRONES_SABANA = "matesin_patrones_sabana";
-const KEY_API_KEY = "matesin_anthropic_api_key";
-const KEY_MODELO = "matesin_anthropic_modelo";
-const KEY_AI_PROXY_URL = "matesin_ai_proxy_url";
-const KEY_CONTROLFILE_BASE_URL = "matesin_controlfile_base_url";
+const KEY_MAPEOS = "controlinject_mapeos_aprendidos";
+const KEY_PATRONES_SABANA = "controlinject_patrones_sabana";
+const KEY_API_KEY = "controlinject_anthropic_api_key";
+const KEY_MODELO = "controlinject_anthropic_modelo";
+const KEY_AI_PROXY_URL = "controlinject_ai_proxy_url";
+const KEY_CONTROLFILE_BASE_URL = "controlinject_controlfile_base_url";
 
-const KEY_CD_USER = "matesin_cd_user";
-const KEY_CD_PASS = "matesin_cd_pass";
+const KEY_CD_USER = "controlinject_cd_user";
+const KEY_CD_PASS = "controlinject_cd_pass";
 
-const KEY_TG_TOKEN = "matesin_tg_token";
-const KEY_TG_CHATID = "matesin_tg_chatid";
-const KEY_TG_DIAS = "matesin_tg_dias"; // legacy
-const KEY_TG_DIAS_PERSONAL = "matesin_tg_dias_personal";
-const KEY_TG_DIAS_VEHICULOS = "matesin_tg_dias_vehiculos";
-const KEY_TG_FRECUENCIA = "matesin_tg_frecuencia";
-const KEY_TG_ACTIVO = "matesin_tg_activo";
-const KEY_TG_SILENCIO_DESDE = "matesin_tg_silencio_desde";
-const KEY_TG_SILENCIO_HASTA = "matesin_tg_silencio_hasta";
-const KEY_TG_ULTIMO_HASH = "matesin_tg_ultimo_hash";
-const KEY_TG_UPDATE_OFFSET = "matesin_tg_update_offset";
+const KEY_TG_TOKEN = "controlinject_tg_token";
+const KEY_TG_CHATID = "controlinject_tg_chatid";
+const KEY_TG_DIAS = "controlinject_tg_dias"; // legacy dentro del flujo de Telegram
+const KEY_TG_DIAS_PERSONAL = "controlinject_tg_dias_personal";
+const KEY_TG_DIAS_VEHICULOS = "controlinject_tg_dias_vehiculos";
+const KEY_TG_FRECUENCIA = "controlinject_tg_frecuencia";
+const KEY_TG_ACTIVO = "controlinject_tg_activo";
+const KEY_TG_SILENCIO_DESDE = "controlinject_tg_silencio_desde";
+const KEY_TG_SILENCIO_HASTA = "controlinject_tg_silencio_hasta";
+const KEY_TG_ULTIMO_HASH = "controlinject_tg_ultimo_hash";
+const KEY_TG_UPDATE_OFFSET = "controlinject_tg_update_offset";
+const KEY_TG_PENDIENTE_DOC = "controlinject_tg_pendiente_doc";
+const KEY_TG_PENDIENTE_SABANA = "controlinject_tg_pendiente_sabana";
 
-const ALARMA_TG = "matesin_alarma_telegram";
-const ALARMA_TG_POLL = "matesin_alarma_tg_poll";
+const ALARMA_TG = "controlinject_alarma_telegram";
+const ALARMA_TG_POLL = "controlinject_alarma_tg_poll";
 
 // Tope práctico para descarga de archivos por Bot API de Telegram (~20 MB).
 const TG_MAX_PDF_BYTES = 20 * 1024 * 1024;
@@ -40,34 +43,52 @@ const FB_AUTH_URL = "https://identitytoolkit.googleapis.com/v1/accounts";
 const FB_TOKEN_URL = "https://securetoken.googleapis.com/v1/token";
 const FB_FS_URL = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT_ID}/databases/(default)/documents`;
 const GOOGLE_CLIENT_ID = "909876364192-da3m0kr3of77fhk1f9jnjjobogv9a8jd.apps.googleusercontent.com";
-const KEY_FB_AUTH = "matesin_fb_auth";
+const KEY_FB_AUTH = "controlinject_fb_auth";
 const APP_FS_ID = "control-inject";
 const CF_UPLOAD_MAPPING_PATH = "/api/apps/controlinject/upload-mapping";
 const CF_DOWNLOAD_MAPPING_PATH = "/api/apps/controlinject/download-mapping";
 
-const TIPOS_DOCUMENTO = [
-  { id: "f931", etiqueta: "931", desc: "Formulario ARCA 931 — tiene el logo de ARCA y un recuadro grande con el número '931' impreso. Dice 'Declaración Jurada en Pesos con centavos S.U.S.S.' Tiene tablas con secciones 'I - REGIMEN NACIONAL DE SEGURIDAD SOCIAL', 'II - REGIMEN NACIONAL DE OBRAS SOCIALES', 'VI - LEY DE RIESGOS DE TRABAJO', 'VIII - MONTOS QUE SE INGRESAN'. Es el formulario de declaración jurada, NO un ticket de banco." },
-  { id: "nomina_f931", etiqueta: "Nomina 931", desc: "Nómina del F 931: listado de empleados asociados al F931 (tabla con nombres/CUILes de la declaración)" },
-  { id: "acuse_f931", etiqueta: "Pago de 931", desc: "Acuse de recibo DJ ARCA / comprobante de presentación del F931 (Presentación DJ por Internet)" },
-  { id: "vep_f931", etiqueta: "Pago de 931", desc: "VEP (Volante Electrónico de Pago) del F931 / SICOSS saldo DJ empleadores" },
-  { id: "pago_f931", etiqueta: "Pago de 931", desc: "Comprobante Banco Provincia — título 'Pago' + 'Operación realizada con éxito' + 'Número de VEP'. SEÑAL DEFINITIVA: lista impuestos de seguridad social con códigos 351 (CONTRIBUCIONES SEG. SOCIAL), 301 (EMPLEADOR-APORTES SEG. SOCIAL), 352 (CONTRIBUCIONES OBRA SOCIAL), 302 (APORTES OBRAS SOCIALES), 312 (ASEG.RIESGO DE TRABAJO / ART), 28 (SEGURO DE VIDA COLECTIVO). Estos códigos son inconfundibles. No tiene 'Nueva transferencia' ni 'VAR f.Desempleo' ni 'Ente Abonado: UOCRA'." },
-  { id: "boleta_uocra", etiqueta: "Pago de aportes sindicales", desc: "Boleta de depósito UOCRA (aporte cuota sindical, FCS, fondo cese laboral)" },
-  { id: "dj_uocra", etiqueta: "Pago de aportes sindicales", desc: "Comprobante de Presentación de Declaración Jurada Nominativa UOCRA" },
-  { id: "pago_uocra", etiqueta: "Pago de aportes sindicales", desc: "Comprobante Banco Provincia — título 'Pago' + 'Operación realizada con éxito'. SEÑAL DEFINITIVA: dice 'Nombre del Ente Abonado: UOCRA' (o 'UOCRA - Online'). Ningún otro ticket de pago tiene este campo con UOCRA. No tiene los códigos de impuestos 351/301/352 del pago_f931." },
-  { id: "vep_autonomo", etiqueta: "Desestimar", desc: "VEP Autónomo / pago de monotributo o autónomos (NO se sube, se desestima)" },
-  { id: "pago_autonomo", etiqueta: "Desestimar", desc: "Comprobante Banco Provincia del pago de autónomos (NO se sube, se desestima)" },
-  { id: "recibo_haberes", etiqueta: "Pago de haberes", desc: "Recibo de sueldo / haberes de un empleado (UOCRA, hay apellido/nombre y CUIL del empleado, quincena y conceptos como hs trabajadas, jubilación, ley 19032, sindical)" },
-  { id: "transferencia_desempleo", etiqueta: "Fondo de desempleo", desc: "Comprobante Banco Provincia — el TÍTULO de la página dice 'Nueva transferencia' (no 'Pago'). Tiene 'Titular cuenta destino' (el empleado receptor), y el campo Referencia dice 'VAR f.Desempleo'. Este título 'Nueva transferencia' lo distingue claramente de pago_f931 que dice 'Pago'. El 'f.' en 'f.Desempleo' significa 'fondo', no 'formulario 931'." },
-  { id: "seguro_rc_pago", etiqueta: "Pago seguro responsabilidad civil", desc: "Pago / recibo del seguro de responsabilidad civil (una sola hoja)" },
-  { id: "seguro_automotor_pago", etiqueta: "Pago seguro automotor", desc: "Pago de seguro de automotor / seguro técnico del vehículo — contiene PATENTE del vehículo. Este documento se usa tanto para Pago seguro automotor como Pago seguro técnico" },
-  { id: "clausula_no_repeticion", etiqueta: "Clausula no repeticion", desc: "Cláusula de no repetición de seguro" },
-  { id: "art_nomina", etiqueta: "Constancia ART con nomina", desc: "Constancia de ART con nómina de personal cubierto" },
-  { id: "vida_obligatorio", etiqueta: "Seguro de vida obligatorio", desc: "Seguro de vida obligatorio decreto 1567" },
-  { id: "entrega_epp", etiqueta: "Entrega EPP", desc: "Planilla de entrega de ropa de trabajo y elementos de protección personal (EPP) — Resolución 299/11 Anexo I. Contiene lista de productos (casco, botines, guantes, lentes, pantalón, camisa, chaleco, tapones auditivos, etc.), fechas de entrega y firma del trabajador. El nombre del trabajador aparece en el campo 'Nombre y Apellido del Trabajador'." },
-  { id: "capacitacion", etiqueta: "Capacitacion", desc: "Planilla de asistencia o constancia de capacitación" },
-  { id: "grua", etiqueta: "Credencial op. gruas", desc: "Credencial de operador de grúa" },
-  { id: "desconocido", etiqueta: "", desc: "No coincide con ninguno de los tipos anteriores" }
-];
+const LEGACY_STORAGE_PREFIX = atob("bWF0ZXNpbg==");
+const legacyStorageKey = (suffix) => `${LEGACY_STORAGE_PREFIX}_${suffix}`;
+const LEGACY_STORAGE_KEYS = Object.fromEntries([
+  ["mapeos_aprendidos", KEY_MAPEOS],
+  ["patrones_sabana", KEY_PATRONES_SABANA],
+  ["anthropic_api_key", KEY_API_KEY],
+  ["anthropic_modelo", KEY_MODELO],
+  ["ai_proxy_url", KEY_AI_PROXY_URL],
+  ["controlfile_base_url", KEY_CONTROLFILE_BASE_URL],
+  ["cd_user", KEY_CD_USER],
+  ["cd_pass", KEY_CD_PASS],
+  ["tg_token", KEY_TG_TOKEN],
+  ["tg_chatid", KEY_TG_CHATID],
+  ["tg_dias", KEY_TG_DIAS],
+  ["tg_dias_personal", KEY_TG_DIAS_PERSONAL],
+  ["tg_dias_vehiculos", KEY_TG_DIAS_VEHICULOS],
+  ["tg_frecuencia", KEY_TG_FRECUENCIA],
+  ["tg_activo", KEY_TG_ACTIVO],
+  ["tg_silencio_desde", KEY_TG_SILENCIO_DESDE],
+  ["tg_silencio_hasta", KEY_TG_SILENCIO_HASTA],
+  ["tg_ultimo_hash", KEY_TG_ULTIMO_HASH],
+  ["tg_update_offset", KEY_TG_UPDATE_OFFSET],
+  ["fb_auth", KEY_FB_AUTH],
+  ["tg_pendiente_doc", KEY_TG_PENDIENTE_DOC],
+  ["tg_pendiente_sabana", KEY_TG_PENDIENTE_SABANA]
+].map(([suffix, currentKey]) => [legacyStorageKey(suffix), currentKey]));
+
+async function migrarStorageLegacy() {
+  const legacyKeys = Object.keys(LEGACY_STORAGE_KEYS);
+  const currentKeys = [...new Set(Object.values(LEGACY_STORAGE_KEYS))];
+  const data = await chrome.storage.local.get([...legacyKeys, ...currentKeys]);
+  const migrado = {};
+  for (const [legacyKey, currentKey] of Object.entries(LEGACY_STORAGE_KEYS)) {
+    if (data[currentKey] === undefined && data[legacyKey] !== undefined) {
+      migrado[currentKey] = data[legacyKey];
+    }
+  }
+  if (Object.keys(migrado).length) await chrome.storage.local.set(migrado);
+}
+
+migrarStorageLegacy().catch((e) => console.warn("[ControlInject] Migracion legacy fallo:", e));
 
 function normalizar(texto) {
   return (texto || "")
@@ -312,7 +333,7 @@ async function cfGetBackendBaseUrl() {
   const data = await chrome.storage.local.get([KEY_CONTROLFILE_BASE_URL]);
   const baseUrl = String(data[KEY_CONTROLFILE_BASE_URL] || "").trim();
   if (!baseUrl) {
-    throw new Error("Falta configurar ControlStorage baseUrl (clave matesin_controlfile_base_url).");
+    throw new Error(`Falta configurar ControlStorage baseUrl (clave ${KEY_CONTROLFILE_BASE_URL}).`);
   }
   if (!auth?.idToken) throw new Error("No hay token Firebase válido.");
   return { baseUrl: baseUrl.replace(/\/+$/, ""), auth };
@@ -651,22 +672,11 @@ async function manejarMensaje(mensaje) {
     return { saved: true };
   }
 
-  if (accion === "ai:clasificarPagina") {
+  if (accion === "ai:extraerMetadataPagina") {
     const base64 = mensaje?.payload?.base64;
     const mediaType = mensaje?.payload?.mediaType || "image/jpeg";
     if (!base64) throw new Error("Falta imagen base64.");
-    return await clasificarPaginaConClaude(base64, mediaType);
-  }
-
-  if (accion === "ai:matchearConMapeo") {
-    const paginasClasificadas = mensaje?.payload?.paginasClasificadas;
-    if (!Array.isArray(paginasClasificadas)) throw new Error("Falta paginasClasificadas.");
-    const dataMapeo = await chrome.storage.local.get(KEY_PATRONES_SABANA);
-    const patrones = (dataMapeo[KEY_PATRONES_SABANA] || []).filter((p) =>
-      Array.isArray(p.firmaTipos) && Array.isArray(p.bloquesModal) && p.bloquesModal.length
-    );
-    if (!patrones.length) return null;
-    return await tgMatchearPatronConClaude(paginasClasificadas, patrones);
+    return await extraerMetadataPaginaConClaude(base64, mediaType);
   }
 
   if (accion === "ai:compararConReferencia") {
@@ -1190,9 +1200,9 @@ async function tgManejarComando(cfg, texto) {
   }
   if (limpio === "no" || limpio === "cancelar") {
     try {
-      const data = await chrome.storage.local.get("matesin_tg_pendiente_sabana");
-      if (data.matesin_tg_pendiente_sabana) {
-        await chrome.storage.local.remove("matesin_tg_pendiente_sabana");
+      const data = await chrome.storage.local.get(KEY_TG_PENDIENTE_SABANA);
+      if (data[KEY_TG_PENDIENTE_SABANA]) {
+        await chrome.storage.local.remove(KEY_TG_PENDIENTE_SABANA);
         await tgEnviarMensaje(cfg.token, cfg.chatId, "❌ Subida cancelada. La sábana pendiente fue descartada.");
       } else {
         await tgEnviarMensaje(cfg.token, cfg.chatId, "ℹ️ No había ninguna sábana pendiente.");
@@ -1441,7 +1451,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
     return result || { items: [], totalConFecha: 0, totalFilas: 0 };
   }
 
-  // Función inyectada: lee la tablita resumen del proveedor (Anexo1BUNGE, ClauNoRepBUN, etc.)
+  // Funcion inyectada: lee la tablita resumen del proveedor.
   // — la que NO tiene columna "Nombre" / "Descripción" pero sí tiene fechas.
   async function ejecLeerResumenProveedor(umbral) {
     const [{ result } = {}] = await chrome.scripting.executeScript({
@@ -1804,133 +1814,8 @@ async function tgRenderPdfEnImagenes(base64Pdf, tabIdExterno) {
 }
 
 /**
- * Compara dos arrays como multisets (mismos elementos, misma cantidad, sin importar orden).
- */
-function tgMismoMultiset(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-  const cnt = {};
-  for (const x of a) { const k = String(x || ""); cnt[k] = (cnt[k] || 0) + 1; }
-  for (const x of b) {
-    const k = String(x || "");
-    if (!cnt[k]) return false;
-    cnt[k]--;
-  }
-  return Object.values(cnt).every(v => v === 0);
-}
-
-/**
- * Calcula similitud entre dos multisets (0 a 1).
- */
-function tgSimilitudMultiset(a, b) {
-  if (!a.length && !b.length) return 1;
-  const cntA = {};
-  for (const x of a) { const k = String(x || ""); cntA[k] = (cntA[k] || 0) + 1; }
-  const cntB = {};
-  for (const x of b) { const k = String(x || ""); cntB[k] = (cntB[k] || 0) + 1; }
-  let coincidencias = 0;
-  let total = 0;
-  const claves = new Set([...Object.keys(cntA), ...Object.keys(cntB)]);
-  for (const k of claves) {
-    coincidencias += Math.min(cntA[k] || 0, cntB[k] || 0);
-    total += Math.max(cntA[k] || 0, cntB[k] || 0);
-  }
-  return total ? coincidencias / total : 0;
-}
-
-/**
- * Busca un patrón de sábana guardado. Prueba en orden:
- *   1. Multiset exacto
- *   2. Misma cantidad de páginas + similitud >= 0.7 (un par de páginas mal-clasificadas tolerable)
- *   3. Misma cantidad total de páginas (último recurso, devuelve el más reciente)
- * Devuelve { patron, calidadMatch: "exacto"|"similar"|"por_cantidad"|null }.
- */
-async function tgBuscarPatronSabana(paginasClasificadas) {
-  const data = await chrome.storage.local.get(KEY_PATRONES_SABANA);
-  const patrones = data[KEY_PATRONES_SABANA] || [];
-  const firmaActual = paginasClasificadas.map(p => p.etiqueta || p.id || "");
-  const totalPaginas = paginasClasificadas.length;
-
-  // Filtrar candidatos válidos
-  const validos = patrones.filter(p =>
-    Array.isArray(p.firmaTipos) && Array.isArray(p.bloquesModal) && p.bloquesModal.length
-  );
-
-  // 1) Match exacto multiset
-  for (const p of validos) {
-    if (tgMismoMultiset(firmaActual, p.firmaTipos)) {
-      return { patron: p, calidadMatch: "exacto" };
-    }
-  }
-
-  // 2) Misma cantidad de páginas + similitud alta
-  let mejorSim = null, mejorScore = 0;
-  for (const p of validos) {
-    if (p.firmaTipos.length !== totalPaginas) continue;
-    const sim = tgSimilitudMultiset(firmaActual, p.firmaTipos);
-    if (sim >= 0.7 && sim > mejorScore) {
-      mejorSim = p;
-      mejorScore = sim;
-    }
-  }
-  if (mejorSim) {
-    return { patron: mejorSim, calidadMatch: "similar" };
-  }
-
-  // 3) Misma cantidad de páginas (último recurso, ignora etiquetas)
-  const porCantidad = validos
-    .filter(p => p.firmaTipos.length === totalPaginas)
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  if (porCantidad.length) {
-    return { patron: porCantidad[0], calidadMatch: "por_cantidad" };
-  }
-
-  return { patron: null, calidadMatch: null };
-}
-
-/**
- * Agrupamiento básico (fallback): junta páginas consecutivas con misma etiqueta
- * + mismo apellido/CUIL/patente.
- * Devuelve un array de bloques con el mismo formato que bloquesModal.
- */
-function tgAutoAgrupar(paginasClasificadas) {
-  const bloques = [];
-  let actual = null;
-  for (const p of paginasClasificadas) {
-    const etiqueta = p.etiqueta || p.id || "(sin clasificar)";
-    const claveActual = `${etiqueta}__${p.apellido || ""}__${p.cuil || ""}__${p.patente || ""}`;
-    if (actual && actual._clave === claveActual) {
-      actual.paginas.push(p.pagina);
-    } else {
-      if (actual) { delete actual._clave; bloques.push(actual); }
-      const personaTxt = [p.apellido, p.nombre].filter(Boolean).join(" ").trim() || (p.patente ? `patente ${p.patente}` : "");
-      actual = {
-        _clave: claveActual,
-        nombre: personaTxt ? `${etiqueta} — ${personaTxt}` : etiqueta,
-        paginas: [p.pagina],
-        // Por defecto, asumimos que el destino es el mismo nombre de la etiqueta
-        // (que es el nombre del requerimiento en controldoc).
-        requerimientos: etiqueta && etiqueta !== "(sin clasificar)" ? [etiqueta] : [],
-        meta: {
-          apellido: p.apellido || "",
-          nombre: p.nombre || "",
-          cuil: p.cuil || "",
-          patente: p.patente || ""
-        }
-      };
-    }
-  }
-  if (actual) { delete actual._clave; bloques.push(actual); }
-  return bloques;
-}
-
-/**
- * Comparación directa imagen vs imagen entre páginas nuevas y páginas de referencia del mapeo.
- * Es el método principal de matching: Claude ve ambas imágenes y decide si son el mismo documento.
- * Solo puede haber cambiado la fecha/monto — la estructura del formulario es idéntica.
- *
- * @param {Array<{pagina:number, base64:string}>} nuevasPaginas
- * @param {{ imagenes: Array<{pagina:number, base64:string}>, bloques: Array }} referencia
- * @returns {Promise<Array<{nombre,paginas,requerimientos,meta}>|null>}
+ * Comparacion directa imagen vs imagen entre paginas nuevas y paginas de referencia del mapeo.
+ * Este es el metodo principal de matching.
  */
 async function compararPaginasConReferencia(nuevasPaginas, referencia) {
   const tieneImagenes = (referencia?.imagenesPorBloque && Object.keys(referencia.imagenesPorBloque).length > 0)
@@ -2013,7 +1898,7 @@ IMPORTANTE: reportá TODAS las páginas nuevas en el JSON, incluso las que no co
 Respondé SOLO JSON válido, sin texto extra:
 {
   "paginas": [
-    { "pagina_nueva": 1, "apellido": "FERNANDEZ DIEGO ARIEL", "nombre": "", "cuil_leido": "20-12345678-9", "entidades_mencionadas": ["FERNANDEZ DIEGO ARIEL", "MATESIN GENARO"], "bloque": "Ref 1" },
+    { "pagina_nueva": 1, "apellido": "APELLIDO NOMBRE", "nombre": "", "cuil_leido": "20-12345678-9", "entidades_mencionadas": ["APELLIDO NOMBRE"], "bloque": "Ref 1" },
     { "pagina_nueva": 2, "apellido": "", "nombre": "", "cuil_leido": "", "entidades_mencionadas": [], "bloque": null }
   ]
 }`
@@ -2135,234 +2020,6 @@ Respondé SOLO JSON válido, sin texto extra:
   return resultado.length ? resultado : null;
 }
 
-/**
- * Remapea las páginas de los bloques guardados al ORDEN ACTUAL del PDF.
- * Si el patrón guardado dice "bloque 1 = páginas 1,2 (tipo A, A)" pero ahora
- * los tipos A están en posiciones 3 y 5, devuelve "bloque 1 = páginas 3, 5".
- * Mismo algoritmo que panel.js línea 337-349.
- */
-function tgRemapearPaginas(patron, paginasClasificadas) {
-  // Construir disponibles con info completa (tipo + cuil + apellido)
-  const normStr = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-  const disponibles = paginasClasificadas.map((p, i) => ({
-    tipo: String(p.etiqueta || p.id || "desconocido"),
-    pagina: i + 1,
-    cuil: normStr(p.cuil || "").replace(/[^0-9]/g, ""),
-    apellido: normStr(p.apellido || ""),
-    usada: false
-  }));
-
-  const remapeados = patron.bloquesModal.map((b) => {
-    const cuilBloque = normStr(b.meta?.cuil || "").replace(/[^0-9]/g, "");
-    const apellidoBloque = normStr(b.meta?.apellido || "");
-    const nuevasPags = [];
-
-    for (const pOriginal of (b.paginas || [])) {
-      const tipoOriginal = String((patron.firmaTipos[pOriginal - 1]) || "desconocido");
-
-      // Candidatos del mismo tipo no usados
-      const candidatos = disponibles.filter((d) => !d.usada && d.tipo === tipoOriginal);
-      if (!candidatos.length) continue;
-
-      let slot = null;
-
-      // 1) Si hay CUIL del bloque, buscar coincidencia exacta de CUIL
-      if (cuilBloque) {
-        slot = candidatos.find((d) => d.cuil && d.cuil === cuilBloque) || null;
-      }
-
-      // 2) Si no hubo match por CUIL, intentar por apellido
-      if (!slot && apellidoBloque) {
-        slot = candidatos.find((d) => d.apellido && d.apellido.includes(apellidoBloque)) || null;
-      }
-
-      // 3) Fallback: primer candidato disponible del tipo correcto
-      if (!slot) slot = candidatos[0];
-
-      if (slot) {
-        slot.usada = true;
-        nuevasPags.push(slot.pagina);
-      }
-    }
-    return { ...b, paginas: nuevasPags };
-  }).filter((b) => b.paginas.length);
-
-  return remapeados;
-}
-
-/**
- * Le pasa a Claude la clasificación de las páginas + los patrones guardados,
- * y le pide que matchee inteligentemente (independiente del orden, por contenido/persona).
- * Devuelve { patronMatch, bloques, confianza } o null si no encuentra match.
- */
-async function tgMatchearPatronConClaude(paginasClasificadas, patrones) {
-  if (!patrones || !patrones.length) return null;
-
-  const { modelo } = await obtenerIAConfig();
-
-  // Resumen de las páginas actuales
-  const resumenPaginas = paginasClasificadas.map(p => {
-    const persona = [p.apellido, p.nombre].filter(Boolean).join(" ").trim();
-    const extras = [];
-    if (persona) extras.push(persona);
-    if (p.cuil) extras.push(`CUIL ${p.cuil}`);
-    if (p.patente) extras.push(`patente ${p.patente}`);
-    return `Página ${p.pagina}: ${p.etiqueta || p.id || "desconocido"}${extras.length ? " — " + extras.join(" · ") : ""}`;
-  }).join("\n");
-
-  // Resumen de cada patrón guardado
-  const resumenPatrones = patrones.map((pat, idx) => {
-    const bloquesTxt = (pat.bloquesModal || []).map((b, i) => {
-      const tipos = (b.paginas || []).map(n => (pat.firmaTipos || [])[n - 1] || "?").join(", ");
-      const reqs = (b.requerimientos || []).join(" + ");
-      return `  Bloque ${i + 1}: "${b.nombre || ""}" (${b.paginas.length} páginas, tipos: ${tipos}) → destinos: ${reqs}`;
-    }).join("\n");
-    return `Patrón ${idx + 1}: "${pat.nombre || "(sin nombre)"}" — ${pat.firmaTipos?.length || 0} páginas totales\n${bloquesTxt}`;
-  }).join("\n\n");
-
-  const prompt = `Soy un sistema que sube documentos a controldocumentario.com. Tengo:
-
-**SÁBANA NUEVA (clasificada por Claude, en el orden actual):**
-${resumenPaginas}
-
-**PATRONES GUARDADOS de sábanas anteriores (cada uno tiene bloques con páginas + destinos):**
-${resumenPatrones}
-
-**TU TAREA:**
-1. Decir si la sábana nueva corresponde a alguno de los patrones guardados (mismo "tipo de sábana", aunque las páginas estén en distinto orden o haya alguna leve diferencia de clasificación).
-2. Si hay match, reasignar los bloques al orden actual de la sábana nueva, usando contenido/persona/CUIL para identificar qué páginas del actual corresponden a qué bloque guardado.
-3. Si NO hay match claro, devolver patronMatch: null.
-
-REGLAS:
-- Una página puede ir a varios destinos (un bloque puede tener requerimientos múltiples).
-- Si el patrón tenía 3 páginas en un bloque y la sábana nueva tiene esas 3 páginas pero en posiciones distintas, encontralas y armá el bloque con los números nuevos.
-- Confianza: alta (>= 80) si las personas/tipos coinciden bien; media (50-79) si hay similitud parcial; baja (< 50) → mejor null.
-
-Respondé SOLO un JSON válido, sin markdown, así:
-{
-  "patron_match": "nombre del patrón o null",
-  "confianza": 0-100,
-  "razonamiento_breve": "una línea explicando",
-  "bloques": [
-    {
-      "nombre": "...",
-      "paginas": [3, 5, 7],
-      "requerimientos": ["destino 1", "destino 2"],
-      "meta": {"apellido": "", "cuil": "", "patente": ""}
-    }
-  ]
-}
-
-Si patron_match es null, devolvé bloques: [].`;
-
-  const body = {
-    model: modelo,
-    max_tokens: 2000,
-    messages: [{ role: "user", content: [{ type: "text", text: prompt }] }]
-  };
-
-  const json = await llamarClaudeMessages(body, "Claude (match patron)");
-  const textoRespuesta = (json?.content?.[0]?.text || "").trim();
-
-  let parsed = null;
-  try { parsed = JSON.parse(textoRespuesta); }
-  catch (_e) {
-    const m = textoRespuesta.match(/\{[\s\S]*\}/);
-    if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
-  }
-  if (!parsed) return null;
-
-  const patronMatch = parsed.patron_match;
-  const confianza = Number(parsed.confianza) || 0;
-  const bloques = Array.isArray(parsed.bloques) ? parsed.bloques : [];
-  const razonamiento = String(parsed.razonamiento_breve || "");
-
-  if (!patronMatch || confianza < 50 || !bloques.length) return null;
-
-  return { patronMatch, confianza, bloques, razonamiento };
-}
-
-/**
- * Arma el plan de subida usando Claude para matchear contra patrones guardados.
- * Si Claude no encuentra match → fallback al matching mecánico → fallback auto-agrupado.
- */
-async function tgArmarPlanSubida(paginasClasificadas) {
-  // 1) Pedirle a Claude que matchee patrones (entiende contenido, no solo etiquetas)
-  try {
-    const data = await chrome.storage.local.get(KEY_PATRONES_SABANA);
-    const patrones = data[KEY_PATRONES_SABANA] || [];
-    const validos = patrones.filter(p =>
-      Array.isArray(p.firmaTipos) && Array.isArray(p.bloquesModal) && p.bloquesModal.length
-    );
-    if (validos.length) {
-      const matchClaude = await tgMatchearPatronConClaude(paginasClasificadas, validos);
-      if (matchClaude) {
-        return {
-          bloques: matchClaude.bloques,
-          origen: "patron-claude",
-          patronUsado: matchClaude.patronMatch,
-          confianzaClaude: matchClaude.confianza,
-          razonamientoClaude: matchClaude.razonamiento
-        };
-      }
-    }
-  } catch (e) {
-    console.warn("[MAU] Match con Claude falló, sigo con fallback:", e);
-  }
-
-  // 2) Fallback: matching mecánico por multiset de etiquetas
-  const { patron, calidadMatch } = await tgBuscarPatronSabana(paginasClasificadas);
-  if (patron && Array.isArray(patron.bloquesModal) && patron.bloquesModal.length) {
-    const bloquesRemapeados = tgRemapearPaginas(patron, paginasClasificadas);
-    return {
-      bloques: bloquesRemapeados,
-      origen: "patron",
-      patronUsado: patron.nombre || "(sin nombre)",
-      calidadMatch
-    };
-  }
-
-  // 3) Fallback final: auto-agrupado por consecutivas mismo tipo+persona
-  const bloques = tgAutoAgrupar(paginasClasificadas);
-  return { bloques, origen: "autoagrupado", patronUsado: null, calidadMatch: null };
-}
-
-/**
- * Construye el mensaje del PLAN de subida para mandar a Telegram.
- */
-function tgConstruirMensajePlan(plan) {
-  const partes = [];
-  if (plan.origen === "patron-claude") {
-    partes.push(`📋 <b>Plan de subida</b> (patrón: <i>${escapeHtml(plan.patronUsado)}</i>) 🧠 matcheado por Claude (confianza ${plan.confianzaClaude}%)`);
-    if (plan.razonamientoClaude) partes.push(`<i>${escapeHtml(plan.razonamientoClaude)}</i>`);
-  } else if (plan.origen === "patron") {
-    let etiquetaCalidad = "";
-    if (plan.calidadMatch === "exacto") etiquetaCalidad = " ✅ match exacto";
-    else if (plan.calidadMatch === "similar") etiquetaCalidad = " ⚠️ match similar";
-    else if (plan.calidadMatch === "por_cantidad") etiquetaCalidad = " ⚠️ match por cantidad de páginas (revisar bien)";
-    partes.push(`📋 <b>Plan de subida</b> (patrón aprendido: <i>${escapeHtml(plan.patronUsado)}</i>)${etiquetaCalidad}`);
-  } else {
-    partes.push(`📋 <b>Plan de subida</b> (no había patrón guardado, agrupé automático)`);
-  }
-  partes.push(`<b>${plan.bloques.length}</b> grupo(s):\n`);
-  let idx = 1;
-  for (const b of plan.bloques) {
-    const reqs = (b.requerimientos && b.requerimientos.length)
-      ? b.requerimientos.map(r => escapeHtml(r)).join(" + ")
-      : "<i>sin destino asignado</i>";
-    const nPaginas = (b.paginas || []).length;
-    const pagsTxt = (b.paginas || []).join(", ");
-    partes.push(`🟦 <b>Grupo ${idx}</b> — ${escapeHtml(b.nombre || "(sin nombre)")}`);
-    partes.push(`   📄 Páginas: ${pagsTxt} (${nPaginas} hoja${nPaginas === 1 ? "" : "s"})`);
-    partes.push(`   ➡️ Destino${b.requerimientos && b.requerimientos.length === 1 ? "" : "s"}: ${reqs}`);
-    partes.push("");
-    idx++;
-  }
-  if (plan.origen === "autoagrupado") {
-    partes.push(`<i>💡 Si esta agrupación no es correcta, cargá la sábana una vez por el panel manual (Bandeja.aspx) para que aprenda el patrón. Después la próxima vez ya viene auto.</i>`);
-  }
-  return partes.join("\n");
-}
 
 /**
  * Manda una foto (base64 JPEG) al chat de Telegram con caption opcional.
@@ -2418,135 +2075,6 @@ async function tgBajarArchivo(token, fileId) {
   const base64 = btoa(binario);
   return { base64, mediaType: "application/pdf", sizeBytes: bytes.length };
 }
-
-/**
- * Manda el PDF entero a Claude pidiendo clasificación página por página.
- * Devuelve un arreglo: [{ pagina, id, etiqueta, apellido, nombre, cuil, patente, periodo }, ...]
- */
-async function clasificarSabanaConClaude(base64Pdf) {
-  const { modelo } = await obtenerIAConfig();
-  const prompt = `Te paso un PDF "sábana" — varios documentos laborales argentinos pegados uno atrás del otro. Para CADA PÁGINA del PDF, decime qué tipo de documento es y los datos del empleado o vehículo, si aplica.
-
-Tipos posibles:
-${construirListaTipos()}
-
-REGLAS CLAVE:
-* Si la página tiene "ENTREGA DE ROPA DE TRABAJO" o "Resolución 299/11" o tabla con casco/botines/guantes → "entrega_epp".
-* Si dice "Planilla de asistencia" o "capacitación" → "capacitacion".
-* Tabla con jubilación/ley 19032/sindical/hs trabajadas → "recibo_haberes".
-* Página con logo ARCA + recuadro "931" + tablas "REGIMEN NACIONAL DE SEGURIDAD SOCIAL" → es "f931". Es el formulario de declaración jurada, nunca un ticket de banco.
-* Banco Provincia título "Pago" + "Número de VEP" + lista impuestos con códigos 351 (CONTRIBUCIONES SEG. SOCIAL), 301 (EMPLEADOR-APORTES SEG. SOCIAL), 352 (CONTRIBUCIONES OBRA SOCIAL), 302, 312 (ART), 28 (SEGURO DE VIDA) → es "pago_f931". Estos códigos son la señal definitiva.
-* Banco Provincia título "Nueva transferencia" + campo Referencia "VAR f.Desempleo" → SIEMPRE "transferencia_desempleo". No confundir: el pago_f931 tiene códigos de impuestos 351/301/352, el transferencia_desempleo tiene "Titular cuenta destino" y "VAR f.Desempleo".
-* Banco Provincia título "Pago" + dice "Nombre del Ente Abonado: UOCRA" (o "UOCRA - Online") → es "pago_uocra". Ningún otro ticket tiene ese campo con UOCRA. Con impuestos 308/358 (autónomos) → es "pago_autonomo".
-* NUNCA pongas como empleado al titular de la empresa "MATESIN CLAUDIO FABIAN" (CUIL 20-20999512-4), excepto si la página es claramente de "MATESIN GENARO" (que sí es empleado).
-* Si la página está rotada 90° o 180°, igual leela.
-
-Datos a extraer por página (solo del EMPLEADO, no de la empresa):
-- cuil: en formato 20-12345678-9, vacío si no se ve.
-- apellido y nombre: del trabajador.
-- patente: solo si el doc es de seguro automotor (ABC123 o AB123CD).
-- periodo: YYYY-MM si aparece.
-
-Respondé SOLO con un JSON válido, sin markdown ni explicaciones, así:
-{"paginas":[{"pagina":1,"id":"xxx","cuil":"","apellido":"","nombre":"","patente":"","periodo":""},{"pagina":2,"id":"xxx",...}]}
-
-Si no podés identificar el tipo de una página, usá "desconocido".`;
-
-  const body = {
-    model: modelo,
-    max_tokens: 4000,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Pdf } },
-          { type: "text", text: prompt }
-        ]
-      }
-    ]
-  };
-
-  const json = await llamarClaudeMessages(body, "Claude API");
-  const textoRespuesta = (json?.content?.[0]?.text || "").trim();
-
-  // Parsear el JSON
-  let parsed = null;
-  try { parsed = JSON.parse(textoRespuesta); }
-  catch (_e) {
-    const m = textoRespuesta.match(/\{[\s\S]*\}/);
-    if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
-  }
-  const arr = Array.isArray(parsed?.paginas) ? parsed.paginas : [];
-  // Normalizar
-  return arr.map((p, i) => {
-    const idCrudo = String(p?.id || "").toLowerCase().replace(/[^a-z0-9_]/g, "");
-    const tipo = TIPOS_DOCUMENTO.find(t => t.id === idCrudo);
-    return {
-      pagina: typeof p?.pagina === "number" ? p.pagina : (i + 1),
-      id: tipo ? tipo.id : "desconocido",
-      etiqueta: tipo ? tipo.etiqueta : "",
-      cuil: String(p?.cuil || "").trim(),
-      apellido: String(p?.apellido || "").trim(),
-      nombre: String(p?.nombre || "").trim(),
-      patente: String(p?.patente || "").trim(),
-      periodo: String(p?.periodo || "").trim()
-    };
-  });
-}
-
-/**
- * Construye el mensaje preview de la clasificación de la sábana.
- */
-function tgConstruirPreviewSabana(paginas, nombreArchivo, sizeBytes) {
-  if (!paginas.length) {
-    return `⚠️ Recibí <b>${escapeHtml(nombreArchivo)}</b> pero no pude clasificar ninguna página. Probá de nuevo o subí el PDF a mano.`;
-  }
-  // Agrupar por tipo (id) para el resumen
-  const conteos = {};
-  for (const p of paginas) {
-    const k = p.etiqueta || "(sin etiqueta)";
-    conteos[k] = (conteos[k] || 0) + 1;
-  }
-  const totalReconocidos = paginas.filter(p => p.id !== "desconocido").length;
-  const totalDudosos = paginas.length - totalReconocidos;
-
-  const partes = [
-    `📥 <b>Sábana recibida</b>: ${escapeHtml(nombreArchivo)} (${(sizeBytes / 1024).toFixed(0)} KB)`,
-    `Detecté <b>${paginas.length}</b> páginas:`,
-    ""
-  ];
-
-  // Resumen por tipo
-  for (const [etiqueta, n] of Object.entries(conteos)) {
-    partes.push(`• <b>${n}</b> × ${escapeHtml(etiqueta)}`);
-  }
-
-  partes.push("");
-  partes.push("<b>Detalle por página:</b>");
-  for (const p of paginas) {
-    const persona = [p.apellido, p.nombre].filter(Boolean).join(" ").trim();
-    const ico = p.id === "desconocido" ? "❓" : "📄";
-    const etiqueta = p.etiqueta || p.id;
-    const extras = [];
-    if (persona) extras.push(persona);
-    if (p.cuil) extras.push(p.cuil);
-    if (p.patente) extras.push(`patente ${p.patente}`);
-    if (p.periodo) extras.push(p.periodo);
-    const cola = extras.length ? ` — ${extras.join(" · ")}` : "";
-    partes.push(`${ico} Pág. ${p.pagina}: ${escapeHtml(etiqueta)}${escapeHtml(cola)}`);
-  }
-
-  partes.push("");
-  if (totalDudosos > 0) {
-    partes.push(`⚠️ Hay <b>${totalDudosos}</b> página(s) que no pude clasificar bien (marcadas con ❓).`);
-  }
-  partes.push("");
-  partes.push(`👉 Etapa 1 lista. Cuando armemos la Etapa 2, vas a poder responder <b>SI</b> para que suba todo, o <b>NO</b> para cancelar.`);
-
-  return partes.join("\n");
-}
-
-// ===================== ETAPA 2: SUBIDA REAL DE LA SÁBANA =====================
 
 /**
  * Busca o abre Bandeja.aspx (donde corre el panel manual).
@@ -2626,9 +2154,9 @@ async function tgDispararSubidaEnPanel(tabId, base64Pdf, fileName, bloquesPlan) 
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const file = new File([bytes], name, { type: "application/pdf" });
 
-      // 4) Aplicar los bloques pre-calculados en Etapa 1 (sin re-clasificar con Claude).
-      //    Los bloques ya tienen cuil/apellido en meta desde la clasificación de Etapa 1.
-      log("Aplicando bloques (clasificación ya hecha en Etapa 1)…");
+      // 4) Aplicar los bloques pre-calculados por el match visual.
+      //    Los bloques ya incluyen metadata generica cuando fue posible leerla.
+      log("Aplicando bloques del match visual...");
       try {
         await P.aplicarBloquesModal(file, bloques);
       } catch (e) {
@@ -2717,8 +2245,8 @@ async function tgDispararSubidaEnPanel(tabId, base64Pdf, fileName, bloquesPlan) 
  * Devuelve true si había un doc pendiente (lo manejó), false si no había nada.
  */
 async function tgConfirmarSubidaDoc(cfg) {
-  const data = await chrome.storage.local.get("matesin_tg_pendiente_doc");
-  const pendiente = data.matesin_tg_pendiente_doc;
+  const data = await chrome.storage.local.get(KEY_TG_PENDIENTE_DOC);
+  const pendiente = data[KEY_TG_PENDIENTE_DOC];
   if (!pendiente?.fileId || !pendiente?.bloques?.length) return false;
 
   const log = (txt) => tgEnviarMensaje(cfg.token, cfg.chatId, txt).catch(e => console.warn("[MAU] log fail", e));
@@ -2755,7 +2283,7 @@ async function tgConfirmarSubidaDoc(cfg) {
   }
 
   // Limpiar pendiente
-  try { await chrome.storage.local.remove("matesin_tg_pendiente_doc"); } catch {}
+  try { await chrome.storage.local.remove(KEY_TG_PENDIENTE_DOC); } catch {}
 
   const tTotal = Math.round((Date.now() - t0) / 1000);
 
@@ -2792,8 +2320,8 @@ async function tgConfirmarSubidaDoc(cfg) {
  * Handler cuando el usuario manda "SI" después de un preview de sábana.
  */
 async function tgConfirmarSubidaSabana(cfg) {
-  const data = await chrome.storage.local.get("matesin_tg_pendiente_sabana");
-  const pendiente = data.matesin_tg_pendiente_sabana;
+  const data = await chrome.storage.local.get(KEY_TG_PENDIENTE_SABANA);
+  const pendiente = data[KEY_TG_PENDIENTE_SABANA];
   if (!pendiente || !pendiente.fileId) {
     await tgEnviarMensaje(cfg.token, cfg.chatId, "ℹ️ No tengo ninguna sábana pendiente. Mandame primero el PDF.");
     return;
@@ -2845,7 +2373,7 @@ async function tgConfirmarSubidaSabana(cfg) {
   await log(partes.join("\n"));
 
   // Limpiar pendiente
-  try { await chrome.storage.local.remove("matesin_tg_pendiente_sabana"); } catch {}
+  try { await chrome.storage.local.remove(KEY_TG_PENDIENTE_SABANA); } catch {}
 }
 
 /**
@@ -2992,7 +2520,7 @@ async function tgManejarDocumento(cfg, doc) {
 
     // 6) Guardar pendiente y pedir confirmación al usuario
     await chrome.storage.local.set({
-      matesin_tg_pendiente_doc: {
+      [KEY_TG_PENDIENTE_DOC]: {
         fileId,
         nombreArchivo,
         bloques: bloquesFinales,
@@ -3172,13 +2700,21 @@ async function llamarClaudeMessages(body, etiquetaError) {
   return await resp.json();
 }
 
-function construirListaTipos() {
-  return TIPOS_DOCUMENTO.map((t) => `- ${t.id}: ${t.desc}`).join("\n");
-}
-
-async function clasificarPaginaConClaude(base64, mediaType) {
+async function extraerMetadataPaginaConClaude(base64, mediaType) {
   const { modelo } = await obtenerIAConfig();
-  const prompt = `Clasificá esta página en uno de estos ids:\n${construirListaTipos()}\n\nRespondé SOLO JSON:\n{"id":"xxx","cuil":"","apellido":"","nombre":"","patente":"","periodo":"","textoEstable":""}`;
+  const prompt = `Lee esta pagina de un documento laboral o vehicular.
+
+Extrae solo datos visibles y genericos. No clasifiques el tipo de documento, no infieras el destino y no uses nombres de entidades como criterio.
+
+Reglas:
+- Si hay una persona trabajadora claramente identificada, devuelve su apellido y nombre. No pongas como persona al empleador, empresa, titular, banco, organismo, aseguradora, sindicato ni prestador.
+- Si hay CUIL/CUIT de la persona trabajadora, devuelvelo. Si solo se ve el CUIT/CUIL del empleador o de una entidad, dejalo vacio.
+- Si hay patente de vehiculo, devuelvela.
+- Si hay periodo o mes/anio, devuelvelo en formato YYYY-MM cuando sea posible.
+- textoEstable debe ser una lista breve de palabras visibles utiles para reconocer la pagina despues, sin datos sensibles innecesarios.
+
+Responde SOLO JSON valido:
+{"cuil":"","apellido":"","nombre":"","patente":"","periodo":"","textoEstable":""}`;
 
   const body = {
     model: modelo,
@@ -3207,13 +2743,9 @@ async function clasificarPaginaConClaude(base64, mediaType) {
     }
   }
 
-  const idCrudo = String(parsed?.id || "").toLowerCase().replace(/[^a-z0-9_]/g, "");
-  const tipo = TIPOS_DOCUMENTO.find((t) => t.id === idCrudo);
-  const id = tipo ? tipo.id : "desconocido";
-  const etiqueta = tipo ? tipo.etiqueta : "";
   return {
-    id,
-    etiqueta,
+    id: "pagina",
+    etiqueta: "",
     cuil: String(parsed?.cuil || "").trim(),
     apellido: String(parsed?.apellido || "").trim(),
     nombre: String(parsed?.nombre || "").trim(),
@@ -3260,4 +2792,3 @@ async function debugEstadoIA() {
     prueba
   };
 }
-

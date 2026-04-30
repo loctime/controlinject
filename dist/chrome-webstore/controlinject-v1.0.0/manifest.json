@@ -1,10 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "ControlBun",
+  "name": "Control Documentario",
   "description": "Automatiza la carga de documentos",
   "version": "1.0.0",
   "permissions": [
-    "activeTab",
     "storage",
     "scripting",
     "alarms",
@@ -23,7 +22,8 @@
     "https://*.vercel.app/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "options_page": "options.html",
   "icons": {

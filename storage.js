@@ -46,10 +46,6 @@
     await enviarMensajeExtension({ action: "storage:guardarPatronesSabana", payload: lista });
   }
 
-  async function matchearConMapeo(paginasClasificadas) {
-    return enviarMensajeExtension({ action: "ai:matchearConMapeo", payload: { paginasClasificadas } });
-  }
-
   async function compararConReferencia(nuevasPaginas, referencia) {
     return enviarMensajeExtension({ action: "ai:compararConReferencia", payload: { nuevasPaginas, referencia } });
   }
@@ -75,7 +71,6 @@
     syncDownFirebase,
     guardarPatronesSabana,
     limpiarPatronesSabana,
-    matchearConMapeo,
     compararConReferencia,
     normalizar
   };

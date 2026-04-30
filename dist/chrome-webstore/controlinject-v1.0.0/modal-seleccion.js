@@ -611,31 +611,19 @@
     for (const b of ctx.bloques) {
       const div = document.createElement("div");
       div.className = "mau-bloque";
-      const metaStr = [
-        b.meta.apellido && `Apellido: ${b.meta.apellido}`,
-        b.meta.cuil && `CUIL: ${b.meta.cuil}`,
-        b.meta.patente && `Patente: ${b.meta.patente}`,
-        b.meta.periodo && `Período: ${b.meta.periodo}`
-      ].filter(Boolean).join(" · ");
+      const metaStr = "";
 
-      // Detectar nombres duplicados para generar UIDs compuestos.
-      const conteoNombres = {};
-      (ctx.requerimientos || []).forEach((r) => { conteoNombres[r.nombre] = (conteoNombres[r.nombre] || 0) + 1; });
-      const uidReq = (r) => {
-        if (conteoNombres[r.nombre] > 1 && r.recurso?.apellido) return `${r.nombre}||${r.recurso.apellido}`;
-        return r.nombre;
-      };
-
-      const reqsHtml = (ctx.requerimientos || []).map((r) => {
-        const uid = uidReq(r);
-        const checked = (b.requerimientos.includes(uid) || (uid !== r.nombre && b.requerimientos.includes(r.nombre))) ? "checked" : "";
-        const recursoLabel = r.recurso && (r.recurso.apellido || r.recurso.nombre)
-          ? ` <span style="color:#888;font-size:11px;">${[r.recurso.apellido, r.recurso.nombre].filter(Boolean).join(" ")}</span>`
-          : "";
-        const labelTexto = conteoNombres[r.nombre] > 1
-          ? `${escapeHtml(r.nombre)}${recursoLabel || " <span style=\"color:#888;font-size:11px;\">(sin datos de recurso)</span>"}`
-          : `${escapeHtml(r.nombre)}${recursoLabel}`;
-        return `<label><input type="checkbox" data-req="${escapeHtml(uid)}" ${checked}/> ${labelTexto}</label>`;
+      const requerimientosUnicos = [];
+      const vistosReq = new Set();
+      (ctx.requerimientos || []).forEach((r) => {
+        const key = String(r?.nombre || "").trim();
+        if (!key || vistosReq.has(key)) return;
+        vistosReq.add(key);
+        requerimientosUnicos.push(r);
+      });
+      const reqsHtml = requerimientosUnicos.map((r) => {
+        const checked = b.requerimientos.includes(r.nombre) ? "checked" : "";
+        return `<label><input type="checkbox" data-req="${escapeHtml(r.nombre)}" ${checked}/> ${escapeHtml(r.nombre)}</label>`;
       }).join("") || `<div style="font-size:11px;color:#888;">No hay requerimientos detectados en la bandeja.</div>`;
 
       div.innerHTML = `

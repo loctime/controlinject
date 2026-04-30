@@ -1,69 +1,94 @@
-chrome.runtime.onInstalled.addListener(() => {
-  console.log("DocAutomatización instalado correctamente.");
+﻿chrome.runtime.onInstalled.addListener(() => {
+  console.log("DocAutomatizaciÃ³n instalado correctamente.");
+  migrarStorageLegacy().catch((e) => console.warn("[ControlInject] Migracion legacy fallo:", e));
 });
 
-const KEY_MAPEOS = "matesin_mapeos_aprendidos";
-const KEY_PATRONES_SABANA = "matesin_patrones_sabana";
-const KEY_API_KEY = "matesin_anthropic_api_key";
-const KEY_MODELO = "matesin_anthropic_modelo";
-const KEY_AI_PROXY_URL = "matesin_ai_proxy_url";
+const KEY_MAPEOS = "controlinject_mapeos_aprendidos";
+const KEY_PATRONES_SABANA = "controlinject_patrones_sabana";
+const KEY_API_KEY = "controlinject_anthropic_api_key";
+const KEY_MODELO = "controlinject_anthropic_modelo";
+const KEY_AI_PROXY_URL = "controlinject_ai_proxy_url";
+const KEY_CONTROLFILE_BASE_URL = "controlinject_controlfile_base_url";
 
-const KEY_CD_USER = "matesin_cd_user";
-const KEY_CD_PASS = "matesin_cd_pass";
+const KEY_CD_USER = "controlinject_cd_user";
+const KEY_CD_PASS = "controlinject_cd_pass";
 
-const KEY_TG_TOKEN = "matesin_tg_token";
-const KEY_TG_CHATID = "matesin_tg_chatid";
-const KEY_TG_DIAS = "matesin_tg_dias"; // legacy
-const KEY_TG_DIAS_PERSONAL = "matesin_tg_dias_personal";
-const KEY_TG_DIAS_VEHICULOS = "matesin_tg_dias_vehiculos";
-const KEY_TG_FRECUENCIA = "matesin_tg_frecuencia";
-const KEY_TG_ACTIVO = "matesin_tg_activo";
-const KEY_TG_SILENCIO_DESDE = "matesin_tg_silencio_desde";
-const KEY_TG_SILENCIO_HASTA = "matesin_tg_silencio_hasta";
-const KEY_TG_ULTIMO_HASH = "matesin_tg_ultimo_hash";
-const KEY_TG_UPDATE_OFFSET = "matesin_tg_update_offset";
+const KEY_TG_TOKEN = "controlinject_tg_token";
+const KEY_TG_CHATID = "controlinject_tg_chatid";
+const KEY_TG_DIAS = "controlinject_tg_dias"; // legacy dentro del flujo de Telegram
+const KEY_TG_DIAS_PERSONAL = "controlinject_tg_dias_personal";
+const KEY_TG_DIAS_VEHICULOS = "controlinject_tg_dias_vehiculos";
+const KEY_TG_FRECUENCIA = "controlinject_tg_frecuencia";
+const KEY_TG_ACTIVO = "controlinject_tg_activo";
+const KEY_TG_SILENCIO_DESDE = "controlinject_tg_silencio_desde";
+const KEY_TG_SILENCIO_HASTA = "controlinject_tg_silencio_hasta";
+const KEY_TG_ULTIMO_HASH = "controlinject_tg_ultimo_hash";
+const KEY_TG_UPDATE_OFFSET = "controlinject_tg_update_offset";
+const KEY_TG_PENDIENTE_DOC = "controlinject_tg_pendiente_doc";
+const KEY_TG_PENDIENTE_SABANA = "controlinject_tg_pendiente_sabana";
 
-const ALARMA_TG = "matesin_alarma_telegram";
-const ALARMA_TG_POLL = "matesin_alarma_tg_poll";
+const ALARMA_TG = "controlinject_alarma_telegram";
+const ALARMA_TG_POLL = "controlinject_alarma_tg_poll";
 
-// Tope práctico para descarga de archivos por Bot API de Telegram (~20 MB).
+// Tope prÃ¡ctico para descarga de archivos por Bot API de Telegram (~20 MB).
 const TG_MAX_PDF_BYTES = 20 * 1024 * 1024;
 
 const MODELO_DEFAULT = "claude-haiku-4-5-20251001";
 const IA_PROXY_URL_HARDCODED = "https://controlinject.vercel.app/api/anthropic/messages";
 
 // ===================== FIREBASE =====================
-const FB_API_KEY = "AIzaSyDyyhN6_k9vxQE2nPY45Euruikm65DI88I";
-const FB_PROJECT_ID = "control-inject";
+const FB_API_KEY = "AIzaSyAOwCob-DvmU0R0nbyk12XlBLxirV1gXVs";
+const FB_PROJECT_ID = "controlstorage-eb796";
 const FB_AUTH_URL = "https://identitytoolkit.googleapis.com/v1/accounts";
 const FB_TOKEN_URL = "https://securetoken.googleapis.com/v1/token";
 const FB_FS_URL = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT_ID}/databases/(default)/documents`;
-const GOOGLE_CLIENT_ID = "1012115598233-09tcoet0isgte4q94etijp66lfq3f7kq.apps.googleusercontent.com";
-const KEY_FB_AUTH = "matesin_fb_auth";
+const GOOGLE_CLIENT_ID = "909876364192-da3m0kr3of77fhk1f9jnjjobogv9a8jd.apps.googleusercontent.com";
+const KEY_FB_AUTH = "controlinject_fb_auth";
+const APP_FS_ID = "control-inject";
+const CF_UPLOAD_MAPPING_PATH = "/api/apps/controlinject/upload-mapping";
+const CF_DOWNLOAD_MAPPING_PATH = "/api/apps/controlinject/download-mapping";
 
-const TIPOS_DOCUMENTO = [
-  { id: "f931", etiqueta: "931", desc: "Formulario ARCA 931 — tiene el logo de ARCA y un recuadro grande con el número '931' impreso. Dice 'Declaración Jurada en Pesos con centavos S.U.S.S.' Tiene tablas con secciones 'I - REGIMEN NACIONAL DE SEGURIDAD SOCIAL', 'II - REGIMEN NACIONAL DE OBRAS SOCIALES', 'VI - LEY DE RIESGOS DE TRABAJO', 'VIII - MONTOS QUE SE INGRESAN'. Es el formulario de declaración jurada, NO un ticket de banco." },
-  { id: "nomina_f931", etiqueta: "Nomina 931", desc: "Nómina del F 931: listado de empleados asociados al F931 (tabla con nombres/CUILes de la declaración)" },
-  { id: "acuse_f931", etiqueta: "Pago de 931", desc: "Acuse de recibo DJ ARCA / comprobante de presentación del F931 (Presentación DJ por Internet)" },
-  { id: "vep_f931", etiqueta: "Pago de 931", desc: "VEP (Volante Electrónico de Pago) del F931 / SICOSS saldo DJ empleadores" },
-  { id: "pago_f931", etiqueta: "Pago de 931", desc: "Comprobante Banco Provincia — título 'Pago' + 'Operación realizada con éxito' + 'Número de VEP'. SEÑAL DEFINITIVA: lista impuestos de seguridad social con códigos 351 (CONTRIBUCIONES SEG. SOCIAL), 301 (EMPLEADOR-APORTES SEG. SOCIAL), 352 (CONTRIBUCIONES OBRA SOCIAL), 302 (APORTES OBRAS SOCIALES), 312 (ASEG.RIESGO DE TRABAJO / ART), 28 (SEGURO DE VIDA COLECTIVO). Estos códigos son inconfundibles. No tiene 'Nueva transferencia' ni 'VAR f.Desempleo' ni 'Ente Abonado: UOCRA'." },
-  { id: "boleta_uocra", etiqueta: "Pago de aportes sindicales", desc: "Boleta de depósito UOCRA (aporte cuota sindical, FCS, fondo cese laboral)" },
-  { id: "dj_uocra", etiqueta: "Pago de aportes sindicales", desc: "Comprobante de Presentación de Declaración Jurada Nominativa UOCRA" },
-  { id: "pago_uocra", etiqueta: "Pago de aportes sindicales", desc: "Comprobante Banco Provincia — título 'Pago' + 'Operación realizada con éxito'. SEÑAL DEFINITIVA: dice 'Nombre del Ente Abonado: UOCRA' (o 'UOCRA - Online'). Ningún otro ticket de pago tiene este campo con UOCRA. No tiene los códigos de impuestos 351/301/352 del pago_f931." },
-  { id: "vep_autonomo", etiqueta: "Desestimar", desc: "VEP Autónomo / pago de monotributo o autónomos (NO se sube, se desestima)" },
-  { id: "pago_autonomo", etiqueta: "Desestimar", desc: "Comprobante Banco Provincia del pago de autónomos (NO se sube, se desestima)" },
-  { id: "recibo_haberes", etiqueta: "Pago de haberes", desc: "Recibo de sueldo / haberes de un empleado (UOCRA, hay apellido/nombre y CUIL del empleado, quincena y conceptos como hs trabajadas, jubilación, ley 19032, sindical)" },
-  { id: "transferencia_desempleo", etiqueta: "Fondo de desempleo", desc: "Comprobante Banco Provincia — el TÍTULO de la página dice 'Nueva transferencia' (no 'Pago'). Tiene 'Titular cuenta destino' (el empleado receptor), y el campo Referencia dice 'VAR f.Desempleo'. Este título 'Nueva transferencia' lo distingue claramente de pago_f931 que dice 'Pago'. El 'f.' en 'f.Desempleo' significa 'fondo', no 'formulario 931'." },
-  { id: "seguro_rc_pago", etiqueta: "Pago seguro responsabilidad civil", desc: "Pago / recibo del seguro de responsabilidad civil (una sola hoja)" },
-  { id: "seguro_automotor_pago", etiqueta: "Pago seguro automotor", desc: "Pago de seguro de automotor / seguro técnico del vehículo — contiene PATENTE del vehículo. Este documento se usa tanto para Pago seguro automotor como Pago seguro técnico" },
-  { id: "clausula_no_repeticion", etiqueta: "Clausula no repeticion", desc: "Cláusula de no repetición de seguro" },
-  { id: "art_nomina", etiqueta: "Constancia ART con nomina", desc: "Constancia de ART con nómina de personal cubierto" },
-  { id: "vida_obligatorio", etiqueta: "Seguro de vida obligatorio", desc: "Seguro de vida obligatorio decreto 1567" },
-  { id: "entrega_epp", etiqueta: "Entrega EPP", desc: "Planilla de entrega de ropa de trabajo y elementos de protección personal (EPP) — Resolución 299/11 Anexo I. Contiene lista de productos (casco, botines, guantes, lentes, pantalón, camisa, chaleco, tapones auditivos, etc.), fechas de entrega y firma del trabajador. El nombre del trabajador aparece en el campo 'Nombre y Apellido del Trabajador'." },
-  { id: "capacitacion", etiqueta: "Capacitacion", desc: "Planilla de asistencia o constancia de capacitación" },
-  { id: "grua", etiqueta: "Credencial op. gruas", desc: "Credencial de operador de grúa" },
-  { id: "desconocido", etiqueta: "", desc: "No coincide con ninguno de los tipos anteriores" }
-];
+const LEGACY_STORAGE_PREFIX = atob("bWF0ZXNpbg==");
+const legacyStorageKey = (suffix) => `${LEGACY_STORAGE_PREFIX}_${suffix}`;
+const LEGACY_STORAGE_KEYS = Object.fromEntries([
+  ["mapeos_aprendidos", KEY_MAPEOS],
+  ["patrones_sabana", KEY_PATRONES_SABANA],
+  ["anthropic_api_key", KEY_API_KEY],
+  ["anthropic_modelo", KEY_MODELO],
+  ["ai_proxy_url", KEY_AI_PROXY_URL],
+  ["controlfile_base_url", KEY_CONTROLFILE_BASE_URL],
+  ["cd_user", KEY_CD_USER],
+  ["cd_pass", KEY_CD_PASS],
+  ["tg_token", KEY_TG_TOKEN],
+  ["tg_chatid", KEY_TG_CHATID],
+  ["tg_dias", KEY_TG_DIAS],
+  ["tg_dias_personal", KEY_TG_DIAS_PERSONAL],
+  ["tg_dias_vehiculos", KEY_TG_DIAS_VEHICULOS],
+  ["tg_frecuencia", KEY_TG_FRECUENCIA],
+  ["tg_activo", KEY_TG_ACTIVO],
+  ["tg_silencio_desde", KEY_TG_SILENCIO_DESDE],
+  ["tg_silencio_hasta", KEY_TG_SILENCIO_HASTA],
+  ["tg_ultimo_hash", KEY_TG_ULTIMO_HASH],
+  ["tg_update_offset", KEY_TG_UPDATE_OFFSET],
+  ["fb_auth", KEY_FB_AUTH],
+  ["tg_pendiente_doc", KEY_TG_PENDIENTE_DOC],
+  ["tg_pendiente_sabana", KEY_TG_PENDIENTE_SABANA]
+].map(([suffix, currentKey]) => [legacyStorageKey(suffix), currentKey]));
+
+async function migrarStorageLegacy() {
+  const legacyKeys = Object.keys(LEGACY_STORAGE_KEYS);
+  const currentKeys = [...new Set(Object.values(LEGACY_STORAGE_KEYS))];
+  const data = await chrome.storage.local.get([...legacyKeys, ...currentKeys]);
+  const migrado = {};
+  for (const [legacyKey, currentKey] of Object.entries(LEGACY_STORAGE_KEYS)) {
+    if (data[currentKey] === undefined && data[legacyKey] !== undefined) {
+      migrado[currentKey] = data[legacyKey];
+    }
+  }
+  if (Object.keys(migrado).length) await chrome.storage.local.set(migrado);
+}
+
+migrarStorageLegacy().catch((e) => console.warn("[ControlInject] Migracion legacy fallo:", e));
 
 function normalizar(texto) {
   return (texto || "")
@@ -178,7 +203,7 @@ async function fbLoginGoogle() {
   const responseUrl = await new Promise((resolve, reject) => {
     chrome.identity.launchWebAuthFlow({ url: authUrl.toString(), interactive: true }, (url) => {
       if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-      if (!url) return reject(new Error("No se recibió respuesta de Google."));
+      if (!url) return reject(new Error("No se recibiÃ³ respuesta de Google."));
       resolve(url);
     });
   });
@@ -285,9 +310,145 @@ function fbSafeDocId(value) {
   return String(value || "").replace(/[/.#?[\]]/g, "_").slice(0, 150);
 }
 
+function fsAppPath(path = "") {
+  const clean = String(path || "").replace(/^\/+/, "");
+  return clean ? `apps/${APP_FS_ID}/${clean}` : `apps/${APP_FS_ID}`;
+}
+
+function fsUserDocPath(uid) {
+  return fsAppPath(`users/${uid}`);
+}
+
+function fsPatronDocPath(uid, docId) {
+  return fsAppPath(`users/${uid}/patrones/${docId}`);
+}
+
+function fsPatronesCollectionPath(uid) {
+  return fsAppPath(`users/${uid}/patrones`);
+}
+
+async function cfGetBackendBaseUrl() {
+  const auth = await fbGetValidAuth();
+  if (!auth?.uid) throw new Error("No hay sesiÃ³n Firebase activa.");
+  const data = await chrome.storage.local.get([KEY_CONTROLFILE_BASE_URL]);
+  const baseUrl = String(data[KEY_CONTROLFILE_BASE_URL] || "").trim();
+  if (!baseUrl) {
+    throw new Error(`Falta configurar ControlStorage baseUrl (clave ${KEY_CONTROLFILE_BASE_URL}).`);
+  }
+  if (!auth?.idToken) throw new Error("No hay token Firebase vÃ¡lido.");
+  return { baseUrl: baseUrl.replace(/\/+$/, ""), auth };
+}
+
+function normalizarSegmentoPath(valor) {
+  return String(valor || "")
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 120) || "sin_nombre";
+}
+
+async function cfSubirReferenciaPatronRemoto(payload) {
+  const nombre = String(payload?.nombre || "").trim();
+  const imagenes = Array.isArray(payload?.imagenes) ? payload.imagenes : [];
+  const bloques = Array.isArray(payload?.bloques) ? payload.bloques : [];
+  if (!nombre) throw new Error("Falta nombre de patrÃ³n.");
+  if (!imagenes.length) throw new Error("No hay imÃ¡genes para subir.");
+
+  const fecha = new Date().toISOString().slice(0, 10);
+  const path = ["mapeos", normalizarSegmentoPath(nombre), fecha];
+
+  const snapshot = {
+    nombre,
+    imagenes,
+    bloques,
+    guardadoEn: Date.now(),
+    version: 1
+  };
+  const { baseUrl, auth } = await cfGetBackendBaseUrl();
+  const fileName = `referencia-${normalizarSegmentoPath(nombre)}.json`;
+  const res = await fetch(`${baseUrl}${CF_UPLOAD_MAPPING_PATH}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${auth.idToken}`
+    },
+    body: JSON.stringify({
+      appId: "controlinject",
+      nombre,
+      fileName,
+      path,
+      snapshot
+    })
+  });
+  const uploaded = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(uploaded?.error || uploaded?.message || `Upload mapping fallÃ³ (${res.status}).`);
+
+  const fileId = uploaded?.fileId;
+  if (!fileId) throw new Error("ControlStorage no devolviÃ³ fileId.");
+
+  const docId = fbSafeDocId(nombre);
+  await fsSetDoc(fsPatronDocPath(auth.uid, docId), {
+    nombre,
+    controlStorageRef: {
+      fileId,
+      fileName: uploaded?.fileName || fileName,
+      fileSize: uploaded?.fileSize || null,
+      downloadUrl: uploaded?.downloadUrl || null,
+      shareUrl: uploaded?.shareUrl || null,
+      updatedAtMs: Date.now()
+    }
+  }, auth.idToken);
+
+  return {
+    ok: true,
+    fileId,
+    downloadUrl: uploaded?.downloadUrl || null,
+    shareUrl: uploaded?.shareUrl || null
+  };
+}
+
+async function cfDescargarReferenciaPatronRemoto(nombrePatron) {
+  const nombre = String(nombrePatron || "").trim();
+  if (!nombre) throw new Error("Falta nombre de patrÃ³n.");
+  const { baseUrl, auth } = await cfGetBackendBaseUrl();
+  const docId = fbSafeDocId(nombre);
+  const patron = await fsGetDoc(fsPatronDocPath(auth.uid, docId), auth.idToken);
+  const fileId = patron?.controlStorageRef?.fileId;
+  if (!fileId) return null;
+  const res = await fetch(`${baseUrl}${CF_DOWNLOAD_MAPPING_PATH}?fileId=${encodeURIComponent(fileId)}`, {
+    headers: { Authorization: `Bearer ${auth.idToken}` }
+  });
+  if (!res.ok) throw new Error(`No se pudo descargar referencia remota (${res.status}).`);
+  const data = await res.json();
+  return {
+    nombre: data?.nombre || nombre,
+    imagenes: Array.isArray(data?.imagenes) ? data.imagenes : [],
+    bloques: Array.isArray(data?.bloques) ? data.bloques : [],
+    imagenesPorBloque: data?.imagenesPorBloque || null
+  };
+}
+
+async function cfDebugUpload() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const nombre = `debug-controlstorage-${stamp}`;
+  const pixel =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2Q6o0AAAAASUVORK5CYII=";
+  return await cfSubirReferenciaPatronRemoto({
+    nombre,
+    imagenes: [{ pagina: 1, base64: `data:image/png;base64,${pixel}` }],
+    bloques: [{
+      nombre: "Debug",
+      paginas: [1],
+      requerimientos: [],
+      destino: { modo: "uno", entidadesObjetivo: [] },
+      meta: {}
+    }]
+  });
+}
+
 async function fbSyncConfigUp() {
   const auth = await fbGetValidAuth();
-  if (!auth?.idToken || !auth.uid) throw new Error("No hay sesión Firebase activa.");
+  if (!auth?.idToken || !auth.uid) throw new Error("No hay sesiÃ³n Firebase activa.");
 
   const local = await chrome.storage.local.get([
     KEY_API_KEY, KEY_MODELO, KEY_AI_PROXY_URL, KEY_CD_USER, KEY_CD_PASS, KEY_TG_TOKEN, KEY_TG_CHATID,
@@ -295,7 +456,9 @@ async function fbSyncConfigUp() {
     KEY_TG_SILENCIO_DESDE, KEY_TG_SILENCIO_HASTA, KEY_MAPEOS, KEY_PATRONES_SABANA
   ]);
 
-  await fsSetDoc(`users/${auth.uid}/config`, {
+  await fsSetDoc(fsUserDocPath(auth.uid), {
+    uid: auth.uid,
+    email: auth.email || "",
     apiKey: local[KEY_API_KEY] || "",
     modelo: local[KEY_MODELO] || MODELO_DEFAULT,
     aiProxyUrl: local[KEY_AI_PROXY_URL] || "",
@@ -316,7 +479,7 @@ async function fbSyncConfigUp() {
   const patrones = Array.isArray(local[KEY_PATRONES_SABANA]) ? local[KEY_PATRONES_SABANA] : [];
   await Promise.all(patrones.map(async (p) => {
     const docId = fbSafeDocId(p.nombre || `patron_${Date.now()}`);
-    await fsSetDoc(`users/${auth.uid}/patrones/${docId}`, {
+    await fsSetDoc(fsPatronDocPath(auth.uid, docId), {
       nombre: p.nombre || "",
       bloquesModal: Array.isArray(p.bloquesModal) ? p.bloquesModal : [],
       firmaTipos: Array.isArray(p.firmaTipos) ? p.firmaTipos : [],
@@ -332,9 +495,9 @@ async function fbSyncConfigUp() {
 
 async function fbSyncConfigDown() {
   const auth = await fbGetValidAuth();
-  if (!auth?.idToken || !auth.uid) throw new Error("No hay sesión Firebase activa.");
+  if (!auth?.idToken || !auth.uid) throw new Error("No hay sesiÃ³n Firebase activa.");
 
-  const config = await fsGetDoc(`users/${auth.uid}/config`, auth.idToken);
+  const config = await fsGetDoc(fsUserDocPath(auth.uid), auth.idToken);
   if (config) {
     await chrome.storage.local.set({
       [KEY_API_KEY]: config.apiKey || "",
@@ -354,7 +517,7 @@ async function fbSyncConfigDown() {
     });
   }
 
-  const patrones = await fsListCollection(`users/${auth.uid}/patrones`, auth.idToken);
+  const patrones = await fsListCollection(fsPatronesCollectionPath(auth.uid), auth.idToken);
   if (patrones.length) {
     await chrome.storage.local.set({
       [KEY_PATRONES_SABANA]: patrones.map((p) => ({
@@ -364,7 +527,8 @@ async function fbSyncConfigDown() {
         bloques: Array.isArray(p.bloques) ? p.bloques : undefined,
         firma: Array.isArray(p.firma) ? p.firma : undefined,
         totalPaginas: p.totalPaginas || undefined,
-        updatedAt: p.updatedAtMs || Date.now()
+        updatedAt: p.updatedAtMs || Date.now(),
+        controlStorageRef: p.controlStorageRef || null
       }))
     });
   }
@@ -382,7 +546,7 @@ chrome.runtime.onMessage.addListener((mensaje, _sender, sendResponse) => {
 
 async function manejarMensaje(mensaje) {
   const accion = mensaje?.action;
-  if (!accion) throw new Error("Mensaje sin acción.");
+  if (!accion) throw new Error("Mensaje sin acciÃ³n.");
 
   if (accion === "storage:getMemory") {
     const data = await chrome.storage.local.get(KEY_MAPEOS);
@@ -399,7 +563,7 @@ async function manejarMensaje(mensaje) {
   if (accion === "storage:learnPattern") {
     const nombreArchivo = mensaje?.payload?.nombreArchivo || "";
     const requerimiento = mensaje?.payload?.requerimiento || "";
-    if (!nombreArchivo || !requerimiento) throw new Error("Faltan datos para aprender patrón.");
+    if (!nombreArchivo || !requerimiento) throw new Error("Faltan datos para aprender patrÃ³n.");
     const data = await chrome.storage.local.get(KEY_MAPEOS);
     const memoria = data[KEY_MAPEOS] || {};
     memoria[normalizar(nombreArchivo)] = requerimiento;
@@ -425,10 +589,10 @@ async function manejarMensaje(mensaje) {
     const firma = payload.firma;
     const bloquesModal = payload.bloquesModal;
     const firmaTipos = payload.firmaTipos;
-    if (!nombre) throw new Error("Falta el nombre del patrón.");
+    if (!nombre) throw new Error("Falta el nombre del patrÃ³n.");
     const tieneViejo = Array.isArray(bloques) && Array.isArray(firma);
     const tieneNuevo = Array.isArray(bloquesModal) && Array.isArray(firmaTipos);
-    if (!tieneViejo && !tieneNuevo) throw new Error("Patrón inválido.");
+    if (!tieneViejo && !tieneNuevo) throw new Error("PatrÃ³n invÃ¡lido.");
     const data = await chrome.storage.local.get(KEY_PATRONES_SABANA);
     const arr = data[KEY_PATRONES_SABANA] || [];
     const idx = arr.findIndex((p) => p.nombre === nombre);
@@ -444,6 +608,14 @@ async function manejarMensaje(mensaje) {
     await chrome.storage.local.set({ [KEY_PATRONES_SABANA]: arr });
     fbSyncConfigUp().catch(() => {});
     return { saved: true };
+  }
+
+  if (accion === "storage:guardarImagenesPatronRemoto") {
+    return await cfSubirReferenciaPatronRemoto(mensaje?.payload || {});
+  }
+
+  if (accion === "storage:descargarImagenesPatronRemoto") {
+    return await cfDescargarReferenciaPatronRemoto(mensaje?.payload?.nombre || "");
   }
 
   if (accion === "storage:guardarPatronesSabana") {
@@ -471,7 +643,7 @@ async function manejarMensaje(mensaje) {
 
   if (accion === "storage:importarMapeo") {
     const payload = mensaje?.payload || {};
-    if (!payload.patrones_sabana && !payload.mapeos_aprendidos) throw new Error("Archivo inválido.");
+    if (!payload.patrones_sabana && !payload.mapeos_aprendidos) throw new Error("Archivo invÃ¡lido.");
     const toSave = {};
     if (Array.isArray(payload.patrones_sabana)) toSave[KEY_PATRONES_SABANA] = payload.patrones_sabana;
     if (payload.mapeos_aprendidos && typeof payload.mapeos_aprendidos === "object") toSave[KEY_MAPEOS] = payload.mapeos_aprendidos;
@@ -500,22 +672,11 @@ async function manejarMensaje(mensaje) {
     return { saved: true };
   }
 
-  if (accion === "ai:clasificarPagina") {
+  if (accion === "ai:extraerMetadataPagina") {
     const base64 = mensaje?.payload?.base64;
     const mediaType = mensaje?.payload?.mediaType || "image/jpeg";
     if (!base64) throw new Error("Falta imagen base64.");
-    return await clasificarPaginaConClaude(base64, mediaType);
-  }
-
-  if (accion === "ai:matchearConMapeo") {
-    const paginasClasificadas = mensaje?.payload?.paginasClasificadas;
-    if (!Array.isArray(paginasClasificadas)) throw new Error("Falta paginasClasificadas.");
-    const dataMapeo = await chrome.storage.local.get(KEY_PATRONES_SABANA);
-    const patrones = (dataMapeo[KEY_PATRONES_SABANA] || []).filter((p) =>
-      Array.isArray(p.firmaTipos) && Array.isArray(p.bloquesModal) && p.bloquesModal.length
-    );
-    if (!patrones.length) return null;
-    return await tgMatchearPatronConClaude(paginasClasificadas, patrones);
+    return await extraerMetadataPaginaConClaude(base64, mediaType);
   }
 
   if (accion === "ai:compararConReferencia") {
@@ -546,6 +707,22 @@ async function manejarMensaje(mensaje) {
     await chrome.storage.local.set({ [KEY_CD_USER]: user, [KEY_CD_PASS]: pass });
     fbSyncConfigUp().catch(() => {});
     return { saved: true };
+  }
+
+  if (accion === "controlfile:getBaseUrl") {
+    const data = await chrome.storage.local.get([KEY_CONTROLFILE_BASE_URL]);
+    return { baseUrl: data[KEY_CONTROLFILE_BASE_URL] || "" };
+  }
+
+  if (accion === "controlfile:setBaseUrl") {
+    const baseUrl = String(mensaje?.payload?.baseUrl || "").trim();
+    await chrome.storage.local.set({ [KEY_CONTROLFILE_BASE_URL]: baseUrl });
+    fbSyncConfigUp().catch(() => {});
+    return { saved: true, baseUrl };
+  }
+
+  if (accion === "controlfile:debugUpload") {
+    return await cfDebugUpload();
   }
 
   if (accion === "auth:probarLogin") {
@@ -582,7 +759,7 @@ async function manejarMensaje(mensaje) {
   if (accion === "firebase:login") {
     const email = String(mensaje?.payload?.email || "").trim();
     const password = String(mensaje?.payload?.password || "");
-    if (!email || !password) throw new Error("Falta email o contraseña.");
+    if (!email || !password) throw new Error("Falta email o contraseÃ±a.");
     const user = await fbLoginEmail(email, password);
     try { await fbSyncConfigDown(); } catch (_) {}
     return { user };
@@ -591,8 +768,8 @@ async function manejarMensaje(mensaje) {
   if (accion === "firebase:register") {
     const email = String(mensaje?.payload?.email || "").trim();
     const password = String(mensaje?.payload?.password || "");
-    if (!email || !password) throw new Error("Falta email o contraseña.");
-    if (password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
+    if (!email || !password) throw new Error("Falta email o contraseÃ±a.");
+    if (password.length < 6) throw new Error("La contraseÃ±a debe tener al menos 6 caracteres.");
     const user = await fbRegisterEmail(email, password);
     try { await fbSyncConfigDown(); } catch (_) {}
     return { user };
@@ -620,7 +797,7 @@ async function manejarMensaje(mensaje) {
   if (accion === "tg:probar") {
     const cfg = await tgGetConfig();
     if (!cfg.token || !cfg.chatId) throw new Error("Falta token o Chat ID.");
-    const texto = "✅ Prueba de DocAutomatización — el bot está conectado.";
+    const texto = "âœ… Prueba de DocAutomatizaciÃ³n â€” el bot estÃ¡ conectado.";
     await tgEnviarMensaje(cfg.token, cfg.chatId, texto);
     return { enviado: true };
   }
@@ -635,22 +812,22 @@ async function manejarMensaje(mensaje) {
     return res;
   }
 
-  throw new Error(`Acción no soportada: ${accion}`);
+  throw new Error(`AcciÃ³n no soportada: ${accion}`);
 }
 
 // ===================== LOGIN AUTO =====================
 
 /**
- * Intenta iniciar sesión en controldocumentario.com/Login.aspx
- * usando el usuario y contraseña guardados en Opciones.
+ * Intenta iniciar sesiÃ³n en controldocumentario.com/Login.aspx
+ * usando el usuario y contraseÃ±a guardados en Opciones.
  *
- * Abre Login.aspx en pestaña (oculta por defecto), busca el primer
+ * Abre Login.aspx en pestaÃ±a (oculta por defecto), busca el primer
  * input de texto visible (usuario), el primer input tipo password
- * (contraseña) y el botón/submit con texto "INGRESAR", lo clickea y
+ * (contraseÃ±a) y el botÃ³n/submit con texto "INGRESAR", lo clickea y
  * espera a que el sitio redirija fuera de Login.aspx (= login OK).
  *
  * Devuelve { ok: true } si el login fue exitoso,
- * o { ok: false, motivo: "..." } si falló (sin credenciales, timeout,
+ * o { ok: false, motivo: "..." } si fallÃ³ (sin credenciales, timeout,
  * credenciales incorrectas, etc.).
  */
 async function cdReLogin({ visible = false } = {}) {
@@ -658,7 +835,7 @@ async function cdReLogin({ visible = false } = {}) {
   const user = creds[KEY_CD_USER] || "";
   const pass = creds[KEY_CD_PASS] || "";
   if (!user || !pass) {
-    return { ok: false, motivo: "No hay usuario/contraseña guardados en Opciones." };
+    return { ok: false, motivo: "No hay usuario/contraseÃ±a guardados en Opciones." };
   }
 
   const url = "https://controldocumentario.com/Login.aspx";
@@ -713,7 +890,7 @@ async function cdReLogin({ visible = false } = {}) {
           .find(esVisible);
 
         if (!inputUser || !inputPass) {
-          return { rellenado: false, motivo: "No encontré los campos de usuario/contraseña." };
+          return { rellenado: false, motivo: "No encontrÃ© los campos de usuario/contraseÃ±a." };
         }
 
         inputUser.focus();
@@ -724,7 +901,7 @@ async function cdReLogin({ visible = false } = {}) {
         inputPass.value = clave;
         dispararEventos(inputPass);
 
-        // Buscar el botón INGRESAR (input submit, button o anchor con texto INGRESAR)
+        // Buscar el botÃ³n INGRESAR (input submit, button o anchor con texto INGRESAR)
         const candidatos = [
           ...document.querySelectorAll('input[type="submit"]'),
           ...document.querySelectorAll('input[type="button"]'),
@@ -732,8 +909,8 @@ async function cdReLogin({ visible = false } = {}) {
           ...document.querySelectorAll('a')
         ].filter(esVisible);
 
-        // Preferir el que diga "INGRESAR"; excluir los de Microsoft / Autogestión / Soy nuevo / Olvidó
-        const malos = ["microsoft", "autogestion", "autogestión", "soy nuevo", "olvido", "olvidó"];
+        // Preferir el que diga "INGRESAR"; excluir los de Microsoft / AutogestiÃ³n / Soy nuevo / OlvidÃ³
+        const malos = ["microsoft", "autogestion", "autogestiÃ³n", "soy nuevo", "olvido", "olvidÃ³"];
         const esMalo = (t) => malos.some(m => t.includes(m));
 
         let btn = candidatos.find(b => {
@@ -750,12 +927,12 @@ async function cdReLogin({ visible = false } = {}) {
         }
 
         if (!btn) {
-          // Último recurso: submit del form de los inputs
+          // Ãšltimo recurso: submit del form de los inputs
           const form = inputPass.form || inputUser.form;
           if (form) {
             try { form.submit(); return { rellenado: true, submitForm: true }; } catch (e) {}
           }
-          return { rellenado: false, motivo: "No encontré el botón INGRESAR." };
+          return { rellenado: false, motivo: "No encontrÃ© el botÃ³n INGRESAR." };
         }
 
         btn.click();
@@ -768,7 +945,7 @@ async function cdReLogin({ visible = false } = {}) {
       return { ok: false, motivo: intentoLogin?.motivo || "No se pudo completar el formulario." };
     }
 
-    // 2) Esperar la redirección. Login OK = la URL ya no contiene "login".
+    // 2) Esperar la redirecciÃ³n. Login OK = la URL ya no contiene "login".
     const inicio = Date.now();
     while (Date.now() - inicio < 20000) {
       await dormir(1000);
@@ -784,14 +961,14 @@ async function cdReLogin({ visible = false } = {}) {
           target: { tabId },
           func: () => {
             const texto = (document.body.innerText || "").toLowerCase();
-            return /incorrect|inv[aá]lid|err[oó]r|usuario o contrase/.test(texto);
+            return /incorrect|inv[aÃ¡]lid|err[oÃ³]r|usuario o contrase/.test(texto);
           }
         }).catch(() => [{}]);
         if (tieneError) {
-          return { ok: false, motivo: "Usuario o contraseña incorrectos." };
+          return { ok: false, motivo: "Usuario o contraseÃ±a incorrectos." };
         }
       } catch (e) {
-        // La pestaña podría haberse cerrado — seguir intentando
+        // La pestaÃ±a podrÃ­a haberse cerrado â€” seguir intentando
       }
     }
     return { ok: false, motivo: "Timeout esperando respuesta del login." };
@@ -845,8 +1022,8 @@ async function tgSetConfig(p) {
 }
 
 /**
- * Devuelve true si la hora actual está dentro del rango de silencio.
- * Soporta rangos que cruzan medianoche (ej: 22:00 → 08:00).
+ * Devuelve true si la hora actual estÃ¡ dentro del rango de silencio.
+ * Soporta rangos que cruzan medianoche (ej: 22:00 â†’ 08:00).
  */
 function tgEnSilencio(silencioDesde, silencioHasta, ahora) {
   if (!silencioDesde || !silencioHasta) return false;
@@ -858,10 +1035,10 @@ function tgEnSilencio(silencioDesde, silencioHasta, ahora) {
   const minHasta = hH * 60 + mH;
   const minAhora = ahora.getHours() * 60 + ahora.getMinutes();
   if (minDesde < minHasta) {
-    // rango dentro del mismo día (ej: 12:00 → 14:00)
+    // rango dentro del mismo dÃ­a (ej: 12:00 â†’ 14:00)
     return minAhora >= minDesde && minAhora < minHasta;
   } else {
-    // rango cruza medianoche (ej: 22:00 → 08:00)
+    // rango cruza medianoche (ej: 22:00 â†’ 08:00)
     return minAhora >= minDesde || minAhora < minHasta;
   }
 }
@@ -905,7 +1082,7 @@ async function tgEnviarMensaje(token, chatId, texto) {
       throw new Error(`Telegram ${resp.status}: ${err.slice(0, 200)}`);
     }
     ultimo = await resp.json();
-    // Pequeña pausa entre envíos para no pegarle al rate limit
+    // PequeÃ±a pausa entre envÃ­os para no pegarle al rate limit
     if (trozos.length > 1) await new Promise(r => setTimeout(r, 350));
   }
   return ultimo;
@@ -941,7 +1118,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       }
       await tgChequearYAvisar({ forzarEnvio: false });
     } catch (e) {
-      console.warn("[MAU] Error en chequeo automático:", e);
+      console.warn("[MAU] Error en chequeo automÃ¡tico:", e);
     }
   }
   if (alarm.name === ALARMA_TG_POLL) {
@@ -971,14 +1148,14 @@ async function tgProcesarComandos() {
   const updates = json?.result || [];
   if (!updates.length) return;
 
-  // Si es la primera vez (offset 0), no procesar mensajes viejos — solo guardar el offset.
+  // Si es la primera vez (offset 0), no procesar mensajes viejos â€” solo guardar el offset.
   if (offset === 0) {
     const ultimo = updates[updates.length - 1].update_id + 1;
     await chrome.storage.local.set({ [KEY_TG_UPDATE_OFFSET]: ultimo });
     return;
   }
 
-  // Guardar el offset ANTES de procesar, así si el service worker muere a mitad
+  // Guardar el offset ANTES de procesar, asÃ­ si el service worker muere a mitad
   // del chequeo, no re-procesamos el mismo comando dos veces.
   const nuevoOffset = updates[updates.length - 1].update_id + 1;
   await chrome.storage.local.set({ [KEY_TG_UPDATE_OFFSET]: nuevoOffset });
@@ -987,13 +1164,13 @@ async function tgProcesarComandos() {
     const mensaje = upd.message;
     if (!mensaje || !mensaje.chat || String(mensaje.chat.id) !== String(cfg.chatId)) continue;
 
-    // ¿Es un documento (PDF) adjunto?
+    // Â¿Es un documento (PDF) adjunto?
     if (mensaje.document && /pdf/i.test(mensaje.document.mime_type || mensaje.document.file_name || "")) {
       try {
         await tgManejarDocumento(cfg, mensaje.document);
       } catch (e) {
         console.warn("[MAU] Error procesando documento:", e);
-        try { await tgEnviarMensaje(cfg.token, cfg.chatId, `❌ Error procesando el PDF: ${e.message || e}`); } catch {}
+        try { await tgEnviarMensaje(cfg.token, cfg.chatId, `âŒ Error procesando el PDF: ${e.message || e}`); } catch {}
       }
       continue;
     }
@@ -1008,27 +1185,27 @@ async function tgManejarComando(cfg, texto) {
   if (!texto) return;
   const limpio = texto.replace(/^\//, "").trim();
 
-  // Confirmar / cancelar subida de sábana pendiente
-  if (limpio === "si" || limpio === "sí" || limpio === "dale" || limpio === "ok") {
+  // Confirmar / cancelar subida de sÃ¡bana pendiente
+  if (limpio === "si" || limpio === "sÃ­" || limpio === "dale" || limpio === "ok") {
     try {
-      // Primero intentar confirmar subida de documento; si no hay, intentar sábana
+      // Primero intentar confirmar subida de documento; si no hay, intentar sÃ¡bana
       const manejadoComoDoc = await tgConfirmarSubidaDoc(cfg);
       if (!manejadoComoDoc) {
         await tgConfirmarSubidaSabana(cfg);
       }
     } catch (e) {
-      await tgEnviarMensaje(cfg.token, cfg.chatId, `❌ Error en la subida: ${escapeHtml(e.message || String(e))}`);
+      await tgEnviarMensaje(cfg.token, cfg.chatId, `âŒ Error en la subida: ${escapeHtml(e.message || String(e))}`);
     }
     return;
   }
   if (limpio === "no" || limpio === "cancelar") {
     try {
-      const data = await chrome.storage.local.get("matesin_tg_pendiente_sabana");
-      if (data.matesin_tg_pendiente_sabana) {
-        await chrome.storage.local.remove("matesin_tg_pendiente_sabana");
-        await tgEnviarMensaje(cfg.token, cfg.chatId, "❌ Subida cancelada. La sábana pendiente fue descartada.");
+      const data = await chrome.storage.local.get(KEY_TG_PENDIENTE_SABANA);
+      if (data[KEY_TG_PENDIENTE_SABANA]) {
+        await chrome.storage.local.remove(KEY_TG_PENDIENTE_SABANA);
+        await tgEnviarMensaje(cfg.token, cfg.chatId, "âŒ Subida cancelada. La sÃ¡bana pendiente fue descartada.");
       } else {
-        await tgEnviarMensaje(cfg.token, cfg.chatId, "ℹ️ No había ninguna sábana pendiente.");
+        await tgEnviarMensaje(cfg.token, cfg.chatId, "â„¹ï¸ No habÃ­a ninguna sÃ¡bana pendiente.");
       }
     } catch {}
     return;
@@ -1037,26 +1214,26 @@ async function tgManejarComando(cfg, texto) {
   if (limpio === "chequear" || limpio === "check" || limpio === "ahora" ||
       limpio === "vencimientos" || limpio === "vencer" || limpio === "revisar") {
     try {
-      await tgEnviarMensaje(cfg.token, cfg.chatId, "🔎 Chequeando vencimientos, dame unos segundos…");
+      await tgEnviarMensaje(cfg.token, cfg.chatId, "ðŸ”Ž Chequeando vencimientos, dame unos segundosâ€¦");
       const res = await tgChequearYAvisar({ forzarEnvio: true });
-      // Sólo mostrar mensaje extra si NO se envió, NO se salteó por lock y hay algo que decir.
+      // SÃ³lo mostrar mensaje extra si NO se enviÃ³, NO se salteÃ³ por lock y hay algo que decir.
       if (!res.enviado && !res.skipped && res.mensaje) {
-        await tgEnviarMensaje(cfg.token, cfg.chatId, `ℹ️ ${res.mensaje}`);
+        await tgEnviarMensaje(cfg.token, cfg.chatId, `â„¹ï¸ ${res.mensaje}`);
       } else if (res.skipped) {
-        await tgEnviarMensaje(cfg.token, cfg.chatId, "⏳ Ya hay un chequeo corriendo, esperá unos segundos.");
+        await tgEnviarMensaje(cfg.token, cfg.chatId, "â³ Ya hay un chequeo corriendo, esperÃ¡ unos segundos.");
       }
     } catch (e) {
-      await tgEnviarMensaje(cfg.token, cfg.chatId, `❌ Error: ${e.message || e}`);
+      await tgEnviarMensaje(cfg.token, cfg.chatId, `âŒ Error: ${e.message || e}`);
     }
     return;
   }
   if (limpio === "help" || limpio === "ayuda" || limpio === "start" || limpio === "comandos") {
     const ayuda = [
       "<b>Comandos disponibles:</b>",
-      "• <b>/chequear</b> — te manda el resumen de vencimientos ahora.",
-      "• <b>/ayuda</b> — muestra este mensaje.",
+      "â€¢ <b>/chequear</b> â€” te manda el resumen de vencimientos ahora.",
+      "â€¢ <b>/ayuda</b> â€” muestra este mensaje.",
       "",
-      "También podés escribir sin la barra: <i>chequear</i>, <i>ahora</i>, <i>vencimientos</i>."
+      "TambiÃ©n podÃ©s escribir sin la barra: <i>chequear</i>, <i>ahora</i>, <i>vencimientos</i>."
     ].join("\n");
     await tgEnviarMensaje(cfg.token, cfg.chatId, ayuda);
     return;
@@ -1068,22 +1245,22 @@ chrome.runtime.onInstalled.addListener(() => { tgReprogramarAlarma().catch(() =>
 
 /**
  * Abre Vencimientos.aspx, selecciona "Personal" en el dropdown, lee la tabla,
- * después selecciona "Máquinas" y lee otra vez. Devuelve los items de los dos.
+ * despuÃ©s selecciona "MÃ¡quinas" y lee otra vez. Devuelve los items de los dos.
  *
  * Cada item: { tipo: "personal"|"vehiculo", nombre, columna, fecha, diasFaltantes }.
- * Sólo se devuelven los que vencen en `umbralDias` o menos (incluye los ya vencidos).
+ * SÃ³lo se devuelven los que vencen en `umbralDias` o menos (incluye los ya vencidos).
  * Las filas con Estado = "Inhabilitado" se ignoran.
  */
 async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = false) {
   const url = "https://controldocumentario.com/Vencimientos.aspx?menu=11";
 
-  // 1) Si ya hay una pestaña abierta en Vencimientos.aspx (o cualquier pantalla del sitio),
+  // 1) Si ya hay una pestaÃ±a abierta en Vencimientos.aspx (o cualquier pantalla del sitio),
   //    usarla y no abrir una nueva. Si no, crear una nueva.
   let tabId = null;
   let tabReusada = false;
   try {
     const candidatas = await chrome.tabs.query({ url: "*://controldocumentario.com/*" });
-    // Preferimos una que ya esté en Vencimientos.aspx
+    // Preferimos una que ya estÃ© en Vencimientos.aspx
     const enVenc = candidatas.find(t => /vencimientos\.aspx/i.test(t.url || ""));
     const elegida = enVenc || candidatas[0];
     if (elegida && elegida.id) {
@@ -1100,7 +1277,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
   const esperarCarga = () => new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(handler);
-      reject(new Error("Timeout cargando la pestaña"));
+      reject(new Error("Timeout cargando la pestaÃ±a"));
     }, 30000);
     function handler(updId, info) {
       if (updId === tabId && info.status === "complete") {
@@ -1115,7 +1292,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
   const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
   const ESPERA_MS = 10000; // 10 segundos pedidos por el usuario
 
-  // Función inyectada: chequea si la página pidió login.
+  // FunciÃ³n inyectada: chequea si la pÃ¡gina pidiÃ³ login.
   async function ejecChequearLogin() {
     const [{ result } = {}] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -1124,7 +1301,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
     return !!result;
   }
 
-  // Función inyectada: selecciona una opción ("Personal" o "Máquinas") en el dropdown
+  // FunciÃ³n inyectada: selecciona una opciÃ³n ("Personal" o "MÃ¡quinas") en el dropdown
   // que tenga ambas opciones, y dispara el evento change.
   async function ejecSeleccionarTipo(textoOpcion) {
     const [{ result } = {}] = await chrome.scripting.executeScript({
@@ -1158,7 +1335,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
     return result || { ok: false };
   }
 
-  // Función inyectada: clickea el botón "Buscar".
+  // FunciÃ³n inyectada: clickea el botÃ³n "Buscar".
   async function ejecClickBuscar() {
     const [{ result } = {}] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -1180,7 +1357,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
     return !!result;
   }
 
-  // Función inyectada: lee la tabla actual y devuelve los items con fecha.
+  // FunciÃ³n inyectada: lee la tabla actual y devuelve los items con fecha.
   async function ejecLeerTabla(tipo, umbral) {
     const [{ result } = {}] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -1202,7 +1379,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
         hoy.setHours(0, 0, 0, 0);
 
         // Buscar SOLO la tabla principal: tiene que tener un TH con texto "Nombre" o
-        // "Descripción", y no debe contener otras tablas adentro (eso descarta los
+        // "DescripciÃ³n", y no debe contener otras tablas adentro (eso descarta los
         // contenedores que envuelven la tabla resumen del proveedor + la tabla principal).
         const tablas = Array.from(document.querySelectorAll("table"));
         let mejor = null;
@@ -1210,7 +1387,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
           if (t.querySelector("table")) continue; // saltear tablas anidadas/contenedoras
           const ths = Array.from(t.querySelectorAll("th"));
           const headerTxts = ths.map(th => (th.textContent || "").trim().toLowerCase());
-          const tieneNombre = headerTxts.some(h => /^(nombre|descripci[oó]n)$/.test(h));
+          const tieneNombre = headerTxts.some(h => /^(nombre|descripci[oÃ³]n)$/.test(h));
           if (!tieneNombre) continue;
           mejor = t;
           break;
@@ -1223,9 +1400,9 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
         const ths2 = Array.from(mejor.querySelectorAll("th"));
         const headers = ths2.map(th => (th.textContent || "").trim());
 
-        // Índices de columnas clave
+        // Ãndices de columnas clave
         const idxEstado = headers.findIndex(h => /^estado/i.test(h.trim()));
-        const idxNombre = headers.findIndex(h => /^(nombre|descripci[oó]n)/i.test(h.trim()));
+        const idxNombre = headers.findIndex(h => /^(nombre|descripci[oÃ³]n)/i.test(h.trim()));
 
         const filas = mejor.querySelectorAll("tr");
         let totalConFecha = 0;
@@ -1241,7 +1418,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
             if (v.includes("inhabilit")) continue;
           }
 
-          // Nombre de la fila — sólo desde la columna "Nombre"/"Descripción". Si no hay, saltar fila.
+          // Nombre de la fila â€” sÃ³lo desde la columna "Nombre"/"DescripciÃ³n". Si no hay, saltar fila.
           let nombre = "";
           if (idxNombre >= 0 && tds[idxNombre]) nombre = (tds[idxNombre].textContent || "").trim();
           if (!nombre) continue;
@@ -1274,8 +1451,8 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
     return result || { items: [], totalConFecha: 0, totalFilas: 0 };
   }
 
-  // Función inyectada: lee la tablita resumen del proveedor (Anexo1BUNGE, ClauNoRepBUN, etc.)
-  // — la que NO tiene columna "Nombre" / "Descripción" pero sí tiene fechas.
+  // Funcion inyectada: lee la tablita resumen del proveedor.
+  // â€” la que NO tiene columna "Nombre" / "DescripciÃ³n" pero sÃ­ tiene fechas.
   async function ejecLeerResumenProveedor(umbral) {
     const [{ result } = {}] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -1295,7 +1472,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
         const hoy = new Date();
         hoy.setHours(0, 0, 0, 0);
 
-        // Buscar la tabla "resumen": tiene fechas, NO tiene columna Nombre/Descripción,
+        // Buscar la tabla "resumen": tiene fechas, NO tiene columna Nombre/DescripciÃ³n,
         // no tiene tablas anidadas, y tiene THs (encabezados de doc types).
         const tablas = Array.from(document.querySelectorAll("table"));
         let mejor = null, maxFechas = 0;
@@ -1304,7 +1481,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
           const ths = Array.from(t.querySelectorAll("th"));
           if (!ths.length) continue;
           const headerTxts = ths.map(th => (th.textContent || "").trim().toLowerCase());
-          const tieneNombre = headerTxts.some(h => /^(nombre|descripci[oó]n)$/.test(h));
+          const tieneNombre = headerTxts.some(h => /^(nombre|descripci[oÃ³]n)$/.test(h));
           if (tieneNombre) continue; // esa es la principal, no resumen
           let n = 0;
           for (const td of t.querySelectorAll("td")) {
@@ -1344,23 +1521,23 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
   }
 
   try {
-    // 1) Si la pestaña la abrimos nosotros, esperar la carga inicial + 10 s extra.
-    //    Si reusamos una pestaña ya abierta, no hace falta esperar la carga, sólo el delay.
+    // 1) Si la pestaÃ±a la abrimos nosotros, esperar la carga inicial + 10 s extra.
+    //    Si reusamos una pestaÃ±a ya abierta, no hace falta esperar la carga, sÃ³lo el delay.
     if (!tabReusada) {
       await esperarCarga();
       await dormir(ESPERA_MS);
     } else {
-      await dormir(1000); // pequeño respiro
+      await dormir(1000); // pequeÃ±o respiro
     }
 
-    // 2) Chequear que no hayamos caído al login
+    // 2) Chequear que no hayamos caÃ­do al login
     let tabActual = await chrome.tabs.get(tabId);
     let urlActual = (tabActual.url || "").toLowerCase();
     if (urlActual.includes("login") || await ejecChequearLogin()) {
       return { items: [], totalConFecha: 0, totalFilas: 0, url: tabActual.url, loginRequerido: true };
     }
 
-    // Si no estamos en Vencimientos, forzar navegación manual
+    // Si no estamos en Vencimientos, forzar navegaciÃ³n manual
     if (!urlActual.includes("vencimientos.aspx")) {
       await chrome.tabs.update(tabId, { url });
       await esperarCarga();
@@ -1381,9 +1558,9 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
     // 3) PERSONAL
     const selPers = await ejecSeleccionarTipo("personal");
     if (!selPers.ok) {
-      console.warn("[MAU] No se encontró el dropdown Personal/Máquinas. Sigo igual.");
+      console.warn("[MAU] No se encontrÃ³ el dropdown Personal/MÃ¡quinas. Sigo igual.");
     }
-    // Si recién cambiamos el dropdown, esperar el postback dependiente
+    // Si reciÃ©n cambiamos el dropdown, esperar el postback dependiente
     if (selPers.ok && !selPers.yaEstaba) await dormir(ESPERA_MS);
     await ejecClickBuscar();
     await dormir(ESPERA_MS);
@@ -1392,12 +1569,12 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
     itemsCombinados.push(...resPers.items);
 
     // 3.b) Documentos GENERALES del proveedor (la tablita chica de arriba),
-    //      que es la misma para Personal y Máquinas — la leemos una sola vez.
+    //      que es la misma para Personal y MÃ¡quinas â€” la leemos una sola vez.
     const resGen = await ejecLeerResumenProveedor(umbralDias);
     totalConFechaTotal += resGen.totalConFecha;
     itemsCombinados.push(...resGen.items);
 
-    // 4) MÁQUINAS / VEHÍCULOS
+    // 4) MÃQUINAS / VEHÃCULOS
     const selMaq = await ejecSeleccionarTipo("maquinas");
     if (selMaq.ok) {
       if (!selMaq.yaEstaba) await dormir(ESPERA_MS);
@@ -1407,7 +1584,7 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
       totalConFechaTotal += resMaq.totalConFecha;
       itemsCombinados.push(...resMaq.items);
     } else {
-      console.warn("[MAU] No se pudo seleccionar Máquinas en el dropdown.");
+      console.warn("[MAU] No se pudo seleccionar MÃ¡quinas en el dropdown.");
     }
 
     return {
@@ -1418,8 +1595,8 @@ async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = fa
       loginRequerido: false
     };
   } finally {
-    // Sólo cerrar la pestaña si la creamos nosotros y no era visible.
-    // Si reusamos una pestaña que el usuario ya tenía abierta, no la tocamos.
+    // SÃ³lo cerrar la pestaÃ±a si la creamos nosotros y no era visible.
+    // Si reusamos una pestaÃ±a que el usuario ya tenÃ­a abierta, no la tocamos.
     if (!tabReusada && !visible) {
       try { await chrome.tabs.remove(tabId); } catch {}
     }
@@ -1433,20 +1610,20 @@ function tgFormatearFechaHora(d) {
 
 function tgPieVerificacion(totalLeidos) {
   const ahora = tgFormatearFechaHora(new Date());
-  return `\n\n<i>— Leí ${totalLeidos} fechas en total (Personal + Vehículos). Detalle en <a href="https://controldocumentario.com/Vencimientos.aspx?menu=11">Vencimientos</a>. Último chequeo: ${ahora}.</i>`;
+  return `\n\n<i>â€” LeÃ­ ${totalLeidos} fechas en total (Personal + VehÃ­culos). Detalle en <a href="https://controldocumentario.com/Vencimientos.aspx?menu=11">Vencimientos</a>. Ãšltimo chequeo: ${ahora}.</i>`;
 }
 
 function tgFraseDias(dias) {
   if (dias < 0) {
     const n = Math.abs(dias);
-    return n === 1 ? "VENCIDO hace 1 día" : `VENCIDO hace ${n} días`;
+    return n === 1 ? "VENCIDO hace 1 dÃ­a" : `VENCIDO hace ${n} dÃ­as`;
   }
   if (dias === 0) return "vence HOY";
-  if (dias === 1) return "vence MAÑANA";
-  return `vence en ${dias} días`;
+  if (dias === 1) return "vence MAÃ‘ANA";
+  return `vence en ${dias} dÃ­as`;
 }
 
-// Agrupa items que tengan el mismo nombre + misma fecha en una sola línea con varias columnas.
+// Agrupa items que tengan el mismo nombre + misma fecha en una sola lÃ­nea con varias columnas.
 function tgAgruparItems(lista) {
   const mapa = new Map();
   for (const it of lista) {
@@ -1460,9 +1637,9 @@ function tgAgruparItems(lista) {
 }
 
 function tgIconoUrgencia(dias) {
-  if (dias < 0) return "🔴"; // vencido
-  if (dias <= 3) return "🟠"; // hoy / 1-3 días
-  return "🟡"; // 4-10 días
+  if (dias < 0) return "ðŸ”´"; // vencido
+  if (dias <= 3) return "ðŸŸ "; // hoy / 1-3 dÃ­as
+  return "ðŸŸ¡"; // 4-10 dÃ­as
 }
 
 function tgConstruirMensaje(items, umbralDias, _x, _totalLeidos = 0) {
@@ -1472,44 +1649,44 @@ function tgConstruirMensaje(items, umbralDias, _x, _totalLeidos = 0) {
 
   if (!generales.length && !personal.length && !vehiculos.length) {
     return [
-      `✅ <b>Todo OK</b> — sin vencimientos en los próximos ${umbralDias} días.`,
-      `📋 General (proveedor): sin vencimientos`,
-      `👷 Personal: sin vencimientos`,
-      `🚗 Vehículos: sin vencimientos`
+      `âœ… <b>Todo OK</b> â€” sin vencimientos en los prÃ³ximos ${umbralDias} dÃ­as.`,
+      `ðŸ“‹ General (proveedor): sin vencimientos`,
+      `ðŸ‘· Personal: sin vencimientos`,
+      `ðŸš— VehÃ­culos: sin vencimientos`
     ].join("\n");
   }
 
   const partes = [
-    `🔔 <b>Vencimientos próximos (${umbralDias} días)</b>`,
-    `<i>🔴 vencido · 🟠 hoy / 1-3 días · 🟡 4-${umbralDias} días</i>`
+    `ðŸ”” <b>Vencimientos prÃ³ximos (${umbralDias} dÃ­as)</b>`,
+    `<i>ðŸ”´ vencido Â· ðŸŸ  hoy / 1-3 dÃ­as Â· ðŸŸ¡ 4-${umbralDias} dÃ­as</i>`
   ];
 
   function bloque(titulo, lista, sinNombre = false) {
-    // Ordenar por días ascendente (más vencidos primero, después los más cercanos)
+    // Ordenar por dÃ­as ascendente (mÃ¡s vencidos primero, despuÃ©s los mÃ¡s cercanos)
     const ordenada = [...lista].sort((a, b) => a.diasFaltantes - b.diasFaltantes);
     partes.push(`\n${titulo}`);
     if (!ordenada.length) {
-      partes.push(`✅ sin vencimientos`);
+      partes.push(`âœ… sin vencimientos`);
       return;
     }
     for (const it of ordenada.slice(0, 60)) {
       const ico = tgIconoUrgencia(it.diasFaltantes);
       const linea = sinNombre
-        ? `${ico} ${escapeHtml(it.columna)} — ${it.fecha} (${tgFraseDias(it.diasFaltantes)})`
-        : `${ico} ${escapeHtml(it.columna)} — ${escapeHtml(it.nombre)} — ${it.fecha} (${tgFraseDias(it.diasFaltantes)})`;
+        ? `${ico} ${escapeHtml(it.columna)} â€” ${it.fecha} (${tgFraseDias(it.diasFaltantes)})`
+        : `${ico} ${escapeHtml(it.columna)} â€” ${escapeHtml(it.nombre)} â€” ${it.fecha} (${tgFraseDias(it.diasFaltantes)})`;
       partes.push(linea);
     }
-    if (ordenada.length > 60) partes.push(`…y ${ordenada.length - 60} más.`);
+    if (ordenada.length > 60) partes.push(`â€¦y ${ordenada.length - 60} mÃ¡s.`);
   }
 
-  bloque("📋 <b>GENERAL (proveedor)</b>", generales, true);
-  bloque("👷 <b>PERSONAL</b>", personal);
-  bloque("🚗 <b>VEHÍCULOS</b>", vehiculos);
+  bloque("ðŸ“‹ <b>GENERAL (proveedor)</b>", generales, true);
+  bloque("ðŸ‘· <b>PERSONAL</b>", personal);
+  bloque("ðŸš— <b>VEHÃCULOS</b>", vehiculos);
 
   return partes.join("\n");
 }
 
-// Parte un mensaje largo en pedazos respetando saltos de línea.
+// Parte un mensaje largo en pedazos respetando saltos de lÃ­nea.
 function tgPartirMensaje(texto, max = 3800) {
   if (!texto || texto.length <= max) return [texto];
   const lineas = texto.split("\n");
@@ -1522,7 +1699,7 @@ function tgPartirMensaje(texto, max = 3800) {
     } else {
       actual = actual ? actual + "\n" + ln : ln;
     }
-    // Si una sola línea ya es más larga que max, partirla a la fuerza
+    // Si una sola lÃ­nea ya es mÃ¡s larga que max, partirla a la fuerza
     while (actual.length > max) {
       trozos.push(actual.slice(0, max));
       actual = actual.slice(max);
@@ -1548,10 +1725,10 @@ function hashRapido(s) {
   return String(h);
 }
 
-// ===================== TELEGRAM: SUBIDA DE SÁBANA POR PDF =====================
+// ===================== TELEGRAM: SUBIDA DE SÃBANA POR PDF =====================
 
 /**
- * Busca una pestaña abierta de controldocumentario.com (cualquier pantalla).
+ * Busca una pestaÃ±a abierta de controldocumentario.com (cualquier pantalla).
  * Si no hay, abre una en blanco. Devuelve { tabId, abrimosNosotros }.
  */
 async function tgConseguirTabControldoc() {
@@ -1579,8 +1756,8 @@ async function tgConseguirTabControldoc() {
 }
 
 /**
- * Renderiza cada página del PDF como JPEG usando pdf.js cargado en una pestaña
- * abierta de controldocumentario.com. Devuelve array de base64 JPEG, una por página.
+ * Renderiza cada pÃ¡gina del PDF como JPEG usando pdf.js cargado en una pestaÃ±a
+ * abierta de controldocumentario.com. Devuelve array de base64 JPEG, una por pÃ¡gina.
  */
 async function tgRenderPdfEnImagenes(base64Pdf, tabIdExterno) {
   const { tabId, abrimosNosotros } = tabIdExterno
@@ -1591,7 +1768,7 @@ async function tgRenderPdfEnImagenes(base64Pdf, tabIdExterno) {
       target: { tabId },
       world: "MAIN",
       func: async (b64) => {
-        // Cargar pdf.js si no está
+        // Cargar pdf.js si no estÃ¡
         if (!window.pdfjsLib) {
           await new Promise((resolve, reject) => {
             const s = document.createElement("script");
@@ -1605,7 +1782,7 @@ async function tgRenderPdfEnImagenes(base64Pdf, tabIdExterno) {
               "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
           }
         }
-        // base64 → bytes
+        // base64 â†’ bytes
         const bin = atob(b64);
         const bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -1637,133 +1814,8 @@ async function tgRenderPdfEnImagenes(base64Pdf, tabIdExterno) {
 }
 
 /**
- * Compara dos arrays como multisets (mismos elementos, misma cantidad, sin importar orden).
- */
-function tgMismoMultiset(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-  const cnt = {};
-  for (const x of a) { const k = String(x || ""); cnt[k] = (cnt[k] || 0) + 1; }
-  for (const x of b) {
-    const k = String(x || "");
-    if (!cnt[k]) return false;
-    cnt[k]--;
-  }
-  return Object.values(cnt).every(v => v === 0);
-}
-
-/**
- * Calcula similitud entre dos multisets (0 a 1).
- */
-function tgSimilitudMultiset(a, b) {
-  if (!a.length && !b.length) return 1;
-  const cntA = {};
-  for (const x of a) { const k = String(x || ""); cntA[k] = (cntA[k] || 0) + 1; }
-  const cntB = {};
-  for (const x of b) { const k = String(x || ""); cntB[k] = (cntB[k] || 0) + 1; }
-  let coincidencias = 0;
-  let total = 0;
-  const claves = new Set([...Object.keys(cntA), ...Object.keys(cntB)]);
-  for (const k of claves) {
-    coincidencias += Math.min(cntA[k] || 0, cntB[k] || 0);
-    total += Math.max(cntA[k] || 0, cntB[k] || 0);
-  }
-  return total ? coincidencias / total : 0;
-}
-
-/**
- * Busca un patrón de sábana guardado. Prueba en orden:
- *   1. Multiset exacto
- *   2. Misma cantidad de páginas + similitud >= 0.7 (un par de páginas mal-clasificadas tolerable)
- *   3. Misma cantidad total de páginas (último recurso, devuelve el más reciente)
- * Devuelve { patron, calidadMatch: "exacto"|"similar"|"por_cantidad"|null }.
- */
-async function tgBuscarPatronSabana(paginasClasificadas) {
-  const data = await chrome.storage.local.get(KEY_PATRONES_SABANA);
-  const patrones = data[KEY_PATRONES_SABANA] || [];
-  const firmaActual = paginasClasificadas.map(p => p.etiqueta || p.id || "");
-  const totalPaginas = paginasClasificadas.length;
-
-  // Filtrar candidatos válidos
-  const validos = patrones.filter(p =>
-    Array.isArray(p.firmaTipos) && Array.isArray(p.bloquesModal) && p.bloquesModal.length
-  );
-
-  // 1) Match exacto multiset
-  for (const p of validos) {
-    if (tgMismoMultiset(firmaActual, p.firmaTipos)) {
-      return { patron: p, calidadMatch: "exacto" };
-    }
-  }
-
-  // 2) Misma cantidad de páginas + similitud alta
-  let mejorSim = null, mejorScore = 0;
-  for (const p of validos) {
-    if (p.firmaTipos.length !== totalPaginas) continue;
-    const sim = tgSimilitudMultiset(firmaActual, p.firmaTipos);
-    if (sim >= 0.7 && sim > mejorScore) {
-      mejorSim = p;
-      mejorScore = sim;
-    }
-  }
-  if (mejorSim) {
-    return { patron: mejorSim, calidadMatch: "similar" };
-  }
-
-  // 3) Misma cantidad de páginas (último recurso, ignora etiquetas)
-  const porCantidad = validos
-    .filter(p => p.firmaTipos.length === totalPaginas)
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  if (porCantidad.length) {
-    return { patron: porCantidad[0], calidadMatch: "por_cantidad" };
-  }
-
-  return { patron: null, calidadMatch: null };
-}
-
-/**
- * Agrupamiento básico (fallback): junta páginas consecutivas con misma etiqueta
- * + mismo apellido/CUIL/patente.
- * Devuelve un array de bloques con el mismo formato que bloquesModal.
- */
-function tgAutoAgrupar(paginasClasificadas) {
-  const bloques = [];
-  let actual = null;
-  for (const p of paginasClasificadas) {
-    const etiqueta = p.etiqueta || p.id || "(sin clasificar)";
-    const claveActual = `${etiqueta}__${p.apellido || ""}__${p.cuil || ""}__${p.patente || ""}`;
-    if (actual && actual._clave === claveActual) {
-      actual.paginas.push(p.pagina);
-    } else {
-      if (actual) { delete actual._clave; bloques.push(actual); }
-      const personaTxt = [p.apellido, p.nombre].filter(Boolean).join(" ").trim() || (p.patente ? `patente ${p.patente}` : "");
-      actual = {
-        _clave: claveActual,
-        nombre: personaTxt ? `${etiqueta} — ${personaTxt}` : etiqueta,
-        paginas: [p.pagina],
-        // Por defecto, asumimos que el destino es el mismo nombre de la etiqueta
-        // (que es el nombre del requerimiento en controldoc).
-        requerimientos: etiqueta && etiqueta !== "(sin clasificar)" ? [etiqueta] : [],
-        meta: {
-          apellido: p.apellido || "",
-          nombre: p.nombre || "",
-          cuil: p.cuil || "",
-          patente: p.patente || ""
-        }
-      };
-    }
-  }
-  if (actual) { delete actual._clave; bloques.push(actual); }
-  return bloques;
-}
-
-/**
- * Comparación directa imagen vs imagen entre páginas nuevas y páginas de referencia del mapeo.
- * Es el método principal de matching: Claude ve ambas imágenes y decide si son el mismo documento.
- * Solo puede haber cambiado la fecha/monto — la estructura del formulario es idéntica.
- *
- * @param {Array<{pagina:number, base64:string}>} nuevasPaginas
- * @param {{ imagenes: Array<{pagina:number, base64:string}>, bloques: Array }} referencia
- * @returns {Promise<Array<{nombre,paginas,requerimientos,meta}>|null>}
+ * Comparacion directa imagen vs imagen entre paginas nuevas y paginas de referencia del mapeo.
+ * Este es el metodo principal de matching.
  */
 async function compararPaginasConReferencia(nuevasPaginas, referencia) {
   const tieneImagenes = (referencia?.imagenesPorBloque && Object.keys(referencia.imagenesPorBloque).length > 0)
@@ -1772,11 +1824,11 @@ async function compararPaginasConReferencia(nuevasPaginas, referencia) {
 
   const { modelo } = await obtenerIAConfig();
 
-  // Obtener TODAS las imágenes de referencia por bloque (una por cada página del bloque)
+  // Obtener TODAS las imÃ¡genes de referencia por bloque (una por cada pÃ¡gina del bloque)
   const bloquesRef = referencia.bloques.map((b) => {
     let imagenesRef = [];
     if (Array.isArray(referencia.imagenes) && referencia.imagenes.length > 0) {
-      // Buscamos la imagen de cada página asignada a este bloque en el mapeo
+      // Buscamos la imagen de cada pÃ¡gina asignada a este bloque en el mapeo
       imagenesRef = (b.paginas || []).map(pNum => {
         const img = referencia.imagenes.find((i) => i.pagina === pNum);
         return img ? img.base64 : null;
@@ -1791,31 +1843,29 @@ async function compararPaginasConReferencia(nuevasPaginas, referencia) {
 
   if (!bloquesRef.length) return null;
 
-  // Log diagnóstico: cuántas imágenes de referencia tiene cada bloque
+  // Log diagnÃ³stico: cuÃ¡ntas imÃ¡genes de referencia tiene cada bloque
   bloquesRef.forEach((b, idx) => {
-    console.log(`[MAU] Ref ${idx+1} "${b.meta?.apellido || b.nombre}": ${b.imagenesRef.length} imagen(es) de referencia, páginas del mapeo: [${(b.paginas||[]).join(",")}]`);
+    console.log(`[MAU] Ref ${idx+1} "${b.nombre}": ${b.imagenesRef.length} imagen(es) de referencia, pÃ¡ginas del mapeo: [${(b.paginas||[]).join(",")}]`);
   });
-  console.log(`[MAU] Páginas nuevas a comparar: ${nuevasPaginas.length}`);
+  console.log(`[MAU] PÃ¡ginas nuevas a comparar: ${nuevasPaginas.length}`);
 
-  // ── 1 sola llamada: Claude extrae tipo + CUIL de cada página, el código hace el match ──
+  // â”€â”€ 1 sola llamada: Claude extrae tipo + CUIL de cada pÃ¡gina, el cÃ³digo hace el match â”€â”€
   const content = [];
 
-  // Mostrar referencias con TODAS sus páginas para que Claude reconozca cada tipo de formulario del bloque
-  content.push({ type: "text", text: "BLOQUES DE REFERENCIA (todas las páginas del bloque, con CUIL del empleado):\n" });
+  // Mostrar referencias con TODAS sus pÃ¡ginas para que Claude reconozca cada tipo de formulario del bloque
+  content.push({ type: "text", text: "BLOQUES DE REFERENCIA (todas las pÃ¡ginas del bloque):\n" });
   bloquesRef.forEach((b, idx) => {
-    const cuil = b.meta?.cuil ? `CUIL: ${b.meta.cuil}` : "CUIL: (no registrado)";
-    const apellido = b.meta?.apellido || "";
-    content.push({ type: "text", text: `\nRef ${idx + 1}: ${apellido} — ${cuil} (${b.imagenesRef.length} tipo(s) de formulario en este bloque)` });
+    content.push({ type: "text", text: `\nRef ${idx + 1}: ${b.nombre || "Bloque"} (${b.imagenesRef.length} tipo(s) de formulario en este bloque)` });
     b.imagenesRef.forEach((imgBase64, pIdx) => {
       content.push({ type: "text", text: `  Formulario ${pIdx + 1} de Ref ${idx + 1}:` });
       content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: imgBase64 } });
     });
   });
 
-  // Páginas nuevas
-  content.push({ type: "text", text: "\n\nPÁGINAS NUEVAS:\n" });
+  // PÃ¡ginas nuevas
+  content.push({ type: "text", text: "\n\nPÃGINAS NUEVAS:\n" });
   nuevasPaginas.forEach((p) => {
-    content.push({ type: "text", text: `\nPágina ${p.pagina}:` });
+    content.push({ type: "text", text: `\nPÃ¡gina ${p.pagina}:` });
     content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: p.base64 } });
   });
 
@@ -1823,32 +1873,33 @@ async function compararPaginasConReferencia(nuevasPaginas, referencia) {
     type: "text",
     text: `
 
-TAREA: para cada página nueva, determiná a qué Ref pertenece.
+TAREA: para cada pÃ¡gina nueva, determinÃ¡ a quÃ© Ref pertenece.
 
-CÓMO HACER EL MATCH:
-Cada Ref representa un empleado y tiene uno o más tipos de formulario (Formulario 1, Formulario 2, etc.).
-Una página nueva pertenece a un Ref si es del MISMO TIPO de formulario que alguno de sus formularios:
-  - Mismo nombre o título del formulario
-  - Misma empresa o institución que lo emite
+CÃ“MO HACER EL MATCH:
+Cada Ref representa un empleado y tiene uno o mÃ¡s tipos de formulario (Formulario 1, Formulario 2, etc.).
+Una pÃ¡gina nueva pertenece a un Ref si es del MISMO TIPO de formulario que alguno de sus formularios:
+  - Mismo nombre o tÃ­tulo del formulario
+  - Misma empresa o instituciÃ³n que lo emite
   - Misma estructura general del documento
 
-No importa el orden en que vienen las páginas, la calidad del scan, ni pequeñas diferencias de contenido.
+No importa el orden en que vienen las pÃ¡ginas, la calidad del scan, ni pequeÃ±as diferencias de contenido.
 Lo que importa es si es el MISMO TIPO de formulario.
 
-CUIL (identificador del empleado):
-Si la página tiene un CUIL legible, usalo para confirmar a qué Ref pertenece.
-Si el CUIL no es legible o no aparece, hacé el match solo por tipo de formulario.
-Un CUIL distinto al del Ref = la página pertenece al Ref con ese CUIL, no al que asignaste visualmente.
+AdemÃ¡s, extraÃ© de cada pÃ¡gina nueva (si es legible):
+- apellido (si podÃ©s, apellido + nombre completo del empleado en el campo apellido)
+- nombre
+- CUIL del empleado
+- entidades_mencionadas: array con nombres completos y/o patentes que aparezcan en la pÃ¡gina
 
-Si una página definitivamente no es ningún tipo de formulario de ningún Ref → bloque: null.
+Si una pÃ¡gina definitivamente no es ningÃºn tipo de formulario de ningÃºn Ref â†’ bloque: null.
 
-IMPORTANTE: reportá TODAS las páginas nuevas en el JSON, incluso las que no coinciden (bloque: null). Leé e informá el CUIL cuando sea legible.
+IMPORTANTE: reportÃ¡ TODAS las pÃ¡ginas nuevas en el JSON, incluso las que no coinciden (bloque: null). LeÃ© e informÃ¡ el CUIL cuando sea legible.
 
-Respondé SOLO JSON válido, sin texto extra:
+RespondÃ© SOLO JSON vÃ¡lido, sin texto extra:
 {
   "paginas": [
-    { "pagina_nueva": 1, "cuil_leido": "20-12345678-9", "bloque": "Ref 1" },
-    { "pagina_nueva": 2, "cuil_leido": "", "bloque": null }
+    { "pagina_nueva": 1, "apellido": "APELLIDO NOMBRE", "nombre": "", "cuil_leido": "20-12345678-9", "entidades_mencionadas": ["APELLIDO NOMBRE"], "bloque": "Ref 1" },
+    { "pagina_nueva": 2, "apellido": "", "nombre": "", "cuil_leido": "", "entidades_mencionadas": [], "bloque": null }
   ]
 }`
   });
@@ -1874,22 +1925,38 @@ Respondé SOLO JSON válido, sin texto extra:
 
   if (!parsed?.paginas?.length) return null;
 
-  // El código hace el match fino: CUIL leído por Claude vs CUIL almacenado en cada bloque de referencia
+  try {
+    const nombresLeidos = Array.from(new Set(
+      parsed.paginas
+        .map((p) => String(p?.apellido || "").trim())
+        .filter(Boolean)
+    ));
+    const entidadesLeidas = Array.from(new Set(
+      parsed.paginas
+        .flatMap((p) => Array.isArray(p?.entidades_mencionadas) ? p.entidades_mencionadas : [])
+        .map((x) => String(x || "").trim())
+        .filter(Boolean)
+    ));
+    console.log("[MAU][DEBUG][IA] Nombres leidos en documento:", nombresLeidos);
+    console.log("[MAU][DEBUG][IA] Entidades mencionadas en documento:", entidadesLeidas);
+  } catch (_) {}
+
+  // El cÃ³digo hace el match fino: CUIL leÃ­do por Claude vs CUIL almacenado en cada bloque de referencia
   const normCuil = (s) => String(s || "").replace(/\D/g, "");
 
-  // Usamos el ÍNDICE en bloquesRef como clave única, porque todos los bloques pueden
+  // Usamos el ÃNDICE en bloquesRef como clave Ãºnica, porque todos los bloques pueden
   // tener el mismo nombre (ej: "Bloque") cuando el usuario no los renombra en el modal.
-  // Indexar por nombre colapsaría bloques distintos en uno solo.
-  const bloquesMapIdx = new Map(); // key: índice en bloquesRef → { refBloque, paginas }
+  // Indexar por nombre colapsarÃ­a bloques distintos en uno solo.
+  const bloquesMapIdx = new Map(); // key: Ã­ndice en bloquesRef â†’ { refBloque, paginas }
 
   for (const item of parsed.paginas) {
     if (!item.pagina_nueva) continue;
     if (!item.bloque) {
-      console.log(`[MAU] Pág ${item.pagina_nueva} → sin asignar (CUIL=${normCuil(item.cuil_leido) || "no leído"})`);
+      console.log(`[MAU] PÃ¡g ${item.pagina_nueva} â†’ sin asignar (CUIL=${normCuil(item.cuil_leido) || "no leÃ­do"})`);
       continue;
     }
 
-    // Resolver el bloque que indicó Claude → primero por nombre exacto, luego por "Ref N"
+    // Resolver el bloque que indicÃ³ Claude â†’ primero por nombre exacto, luego por "Ref N"
     let refIdx = bloquesRef.findIndex((b) => b.nombre === item.bloque);
     if (refIdx === -1) {
       const mm = String(item.bloque).match(/^Ref\s*(\d+)$/i);
@@ -1901,46 +1968,47 @@ Respondé SOLO JSON válido, sin texto extra:
     if (refIdx === -1) continue;
     let refBloque = bloquesRef[refIdx];
 
-    // Validación por CUIL: si el CUIL leído no coincide con el bloque que indicó Claude,
-    // buscamos el bloque correcto por CUIL
+    // No usamos CUIL/CUIT para reasignar empleados.
+    // El criterio principal es match visual del formulario + nombre completo detectado luego.
     const cuilLeido = normCuil(item.cuil_leido);
-    const cuilBloque = normCuil(refBloque.meta?.cuil);
 
-    if (cuilLeido && cuilBloque && cuilLeido !== cuilBloque) {
-      const corrIdx = bloquesRef.findIndex((b) => normCuil(b.meta?.cuil) === cuilLeido);
-      if (corrIdx !== -1) {
-        console.log(`[MAU] Pág ${item.pagina_nueva}: CUIL ${cuilLeido} reasignado de Ref ${refIdx+1} → Ref ${corrIdx+1} (${bloquesRef[corrIdx].meta?.apellido || ""})`);
-        refIdx = corrIdx;
-        refBloque = bloquesRef[corrIdx];
-      } else {
-        // El CUIL leído no es de ningún empleado conocido (puede ser el CUIL del empleador
-        // que aparece impreso en el documento). En ese caso confiamos en el match visual de Claude.
-        console.log(`[MAU] Pág ${item.pagina_nueva}: CUIL ${cuilLeido} no es de ningún empleado conocido (posiblemente CUIL del empleador) → se mantiene asignación visual a Ref ${refIdx+1} (${refBloque.meta?.apellido || ""})`);
-      }
-    }
-
-    console.log(`[MAU] Pág ${item.pagina_nueva} → Ref ${refIdx+1} "${refBloque.meta?.apellido || refBloque.nombre}" CUIL=${cuilLeido || "(sin cuil)"}`);
+    console.log(`[MAU] PÃ¡g ${item.pagina_nueva} â†’ Ref ${refIdx+1} "${refBloque.nombre || "Bloque"}" CUIL=${cuilLeido || "(sin cuil)"}`);
     if (!bloquesMapIdx.has(refIdx)) {
       bloquesMapIdx.set(refIdx, {
         nombre: refBloque.nombre,
         paginas: [],
-        paginasMapeo: (refBloque.paginas || []).length, // cuántas páginas tiene este bloque en el mapeo
+        paginasMapeo: (refBloque.paginas || []).length, // cuÃ¡ntas pÃ¡ginas tiene este bloque en el mapeo
         requerimientos: refBloque.requerimientos || [],
-        meta: { ...refBloque.meta }
+        destino: refBloque.destino || { modo: "uno", entidadesObjetivo: [] },
+        meta: {}
       });
     }
-    if (cuilLeido) bloquesMapIdx.get(refIdx).meta = { ...bloquesMapIdx.get(refIdx).meta, cuil: item.cuil_leido };
+    const metaActual = bloquesMapIdx.get(refIdx).meta || {};
+    const metaNuevo = {
+      ...metaActual,
+      apellido: metaActual.apellido || String(item.apellido || "").trim(),
+      nombre: metaActual.nombre || String(item.nombre || "").trim()
+    };
+    const entidadesPag = Array.isArray(item.entidades_mencionadas)
+      ? item.entidades_mencionadas.map((x) => String(x || "").trim()).filter(Boolean)
+      : [];
+    if (entidadesPag.length) {
+      const prev = Array.isArray(metaActual.entidades_mencionadas) ? metaActual.entidades_mencionadas : [];
+      metaNuevo.entidades_mencionadas = Array.from(new Set([...prev, ...entidadesPag]));
+    }
+    if (cuilLeido) metaNuevo.cuil = item.cuil_leido;
+    bloquesMapIdx.get(refIdx).meta = metaNuevo;
     bloquesMapIdx.get(refIdx).paginas.push(item.pagina_nueva);
   }
 
-  // Validar que cada bloque encontrado tiene TODAS las páginas que dice el mapeo.
-  // Si falta alguna página, el bloque se descarta (el mapeo manda).
-  // Bloques de otras personas que sí están completos se suben igual (listas cortas son válidas).
+  // Validar que cada bloque encontrado tiene TODAS las pÃ¡ginas que dice el mapeo.
+  // Si falta alguna pÃ¡gina, el bloque se descarta (el mapeo manda).
+  // Bloques de otras personas que sÃ­ estÃ¡n completos se suben igual (listas cortas son vÃ¡lidas).
   const descartados = [];
   const resultado = Array.from(bloquesMapIdx.values()).filter((b) => {
     if (!b.paginas.length || !b.requerimientos.length) return false;
     if (b.paginasMapeo > 0 && b.paginas.length < b.paginasMapeo) {
-      console.log(`[MAU] Bloque "${b.meta?.apellido || b.nombre}" descartado: encontradas ${b.paginas.length}/${b.paginasMapeo} páginas del mapeo`);
+      console.log(`[MAU] Bloque "${b.nombre}" descartado: encontradas ${b.paginas.length}/${b.paginasMapeo} pÃ¡ginas del mapeo`);
       descartados.push(b);
       return false;
     }
@@ -1952,234 +2020,6 @@ Respondé SOLO JSON válido, sin texto extra:
   return resultado.length ? resultado : null;
 }
 
-/**
- * Remapea las páginas de los bloques guardados al ORDEN ACTUAL del PDF.
- * Si el patrón guardado dice "bloque 1 = páginas 1,2 (tipo A, A)" pero ahora
- * los tipos A están en posiciones 3 y 5, devuelve "bloque 1 = páginas 3, 5".
- * Mismo algoritmo que panel.js línea 337-349.
- */
-function tgRemapearPaginas(patron, paginasClasificadas) {
-  // Construir disponibles con info completa (tipo + cuil + apellido)
-  const normStr = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-  const disponibles = paginasClasificadas.map((p, i) => ({
-    tipo: String(p.etiqueta || p.id || "desconocido"),
-    pagina: i + 1,
-    cuil: normStr(p.cuil || "").replace(/[^0-9]/g, ""),
-    apellido: normStr(p.apellido || ""),
-    usada: false
-  }));
-
-  const remapeados = patron.bloquesModal.map((b) => {
-    const cuilBloque = normStr(b.meta?.cuil || "").replace(/[^0-9]/g, "");
-    const apellidoBloque = normStr(b.meta?.apellido || "");
-    const nuevasPags = [];
-
-    for (const pOriginal of (b.paginas || [])) {
-      const tipoOriginal = String((patron.firmaTipos[pOriginal - 1]) || "desconocido");
-
-      // Candidatos del mismo tipo no usados
-      const candidatos = disponibles.filter((d) => !d.usada && d.tipo === tipoOriginal);
-      if (!candidatos.length) continue;
-
-      let slot = null;
-
-      // 1) Si hay CUIL del bloque, buscar coincidencia exacta de CUIL
-      if (cuilBloque) {
-        slot = candidatos.find((d) => d.cuil && d.cuil === cuilBloque) || null;
-      }
-
-      // 2) Si no hubo match por CUIL, intentar por apellido
-      if (!slot && apellidoBloque) {
-        slot = candidatos.find((d) => d.apellido && d.apellido.includes(apellidoBloque)) || null;
-      }
-
-      // 3) Fallback: primer candidato disponible del tipo correcto
-      if (!slot) slot = candidatos[0];
-
-      if (slot) {
-        slot.usada = true;
-        nuevasPags.push(slot.pagina);
-      }
-    }
-    return { ...b, paginas: nuevasPags };
-  }).filter((b) => b.paginas.length);
-
-  return remapeados;
-}
-
-/**
- * Le pasa a Claude la clasificación de las páginas + los patrones guardados,
- * y le pide que matchee inteligentemente (independiente del orden, por contenido/persona).
- * Devuelve { patronMatch, bloques, confianza } o null si no encuentra match.
- */
-async function tgMatchearPatronConClaude(paginasClasificadas, patrones) {
-  if (!patrones || !patrones.length) return null;
-
-  const { modelo } = await obtenerIAConfig();
-
-  // Resumen de las páginas actuales
-  const resumenPaginas = paginasClasificadas.map(p => {
-    const persona = [p.apellido, p.nombre].filter(Boolean).join(" ").trim();
-    const extras = [];
-    if (persona) extras.push(persona);
-    if (p.cuil) extras.push(`CUIL ${p.cuil}`);
-    if (p.patente) extras.push(`patente ${p.patente}`);
-    return `Página ${p.pagina}: ${p.etiqueta || p.id || "desconocido"}${extras.length ? " — " + extras.join(" · ") : ""}`;
-  }).join("\n");
-
-  // Resumen de cada patrón guardado
-  const resumenPatrones = patrones.map((pat, idx) => {
-    const bloquesTxt = (pat.bloquesModal || []).map((b, i) => {
-      const tipos = (b.paginas || []).map(n => (pat.firmaTipos || [])[n - 1] || "?").join(", ");
-      const reqs = (b.requerimientos || []).join(" + ");
-      return `  Bloque ${i + 1}: "${b.nombre || ""}" (${b.paginas.length} páginas, tipos: ${tipos}) → destinos: ${reqs}`;
-    }).join("\n");
-    return `Patrón ${idx + 1}: "${pat.nombre || "(sin nombre)"}" — ${pat.firmaTipos?.length || 0} páginas totales\n${bloquesTxt}`;
-  }).join("\n\n");
-
-  const prompt = `Soy un sistema que sube documentos a controldocumentario.com. Tengo:
-
-**SÁBANA NUEVA (clasificada por Claude, en el orden actual):**
-${resumenPaginas}
-
-**PATRONES GUARDADOS de sábanas anteriores (cada uno tiene bloques con páginas + destinos):**
-${resumenPatrones}
-
-**TU TAREA:**
-1. Decir si la sábana nueva corresponde a alguno de los patrones guardados (mismo "tipo de sábana", aunque las páginas estén en distinto orden o haya alguna leve diferencia de clasificación).
-2. Si hay match, reasignar los bloques al orden actual de la sábana nueva, usando contenido/persona/CUIL para identificar qué páginas del actual corresponden a qué bloque guardado.
-3. Si NO hay match claro, devolver patronMatch: null.
-
-REGLAS:
-- Una página puede ir a varios destinos (un bloque puede tener requerimientos múltiples).
-- Si el patrón tenía 3 páginas en un bloque y la sábana nueva tiene esas 3 páginas pero en posiciones distintas, encontralas y armá el bloque con los números nuevos.
-- Confianza: alta (>= 80) si las personas/tipos coinciden bien; media (50-79) si hay similitud parcial; baja (< 50) → mejor null.
-
-Respondé SOLO un JSON válido, sin markdown, así:
-{
-  "patron_match": "nombre del patrón o null",
-  "confianza": 0-100,
-  "razonamiento_breve": "una línea explicando",
-  "bloques": [
-    {
-      "nombre": "...",
-      "paginas": [3, 5, 7],
-      "requerimientos": ["destino 1", "destino 2"],
-      "meta": {"apellido": "", "cuil": "", "patente": ""}
-    }
-  ]
-}
-
-Si patron_match es null, devolvé bloques: [].`;
-
-  const body = {
-    model: modelo,
-    max_tokens: 2000,
-    messages: [{ role: "user", content: [{ type: "text", text: prompt }] }]
-  };
-
-  const json = await llamarClaudeMessages(body, "Claude (match patron)");
-  const textoRespuesta = (json?.content?.[0]?.text || "").trim();
-
-  let parsed = null;
-  try { parsed = JSON.parse(textoRespuesta); }
-  catch (_e) {
-    const m = textoRespuesta.match(/\{[\s\S]*\}/);
-    if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
-  }
-  if (!parsed) return null;
-
-  const patronMatch = parsed.patron_match;
-  const confianza = Number(parsed.confianza) || 0;
-  const bloques = Array.isArray(parsed.bloques) ? parsed.bloques : [];
-  const razonamiento = String(parsed.razonamiento_breve || "");
-
-  if (!patronMatch || confianza < 50 || !bloques.length) return null;
-
-  return { patronMatch, confianza, bloques, razonamiento };
-}
-
-/**
- * Arma el plan de subida usando Claude para matchear contra patrones guardados.
- * Si Claude no encuentra match → fallback al matching mecánico → fallback auto-agrupado.
- */
-async function tgArmarPlanSubida(paginasClasificadas) {
-  // 1) Pedirle a Claude que matchee patrones (entiende contenido, no solo etiquetas)
-  try {
-    const data = await chrome.storage.local.get(KEY_PATRONES_SABANA);
-    const patrones = data[KEY_PATRONES_SABANA] || [];
-    const validos = patrones.filter(p =>
-      Array.isArray(p.firmaTipos) && Array.isArray(p.bloquesModal) && p.bloquesModal.length
-    );
-    if (validos.length) {
-      const matchClaude = await tgMatchearPatronConClaude(paginasClasificadas, validos);
-      if (matchClaude) {
-        return {
-          bloques: matchClaude.bloques,
-          origen: "patron-claude",
-          patronUsado: matchClaude.patronMatch,
-          confianzaClaude: matchClaude.confianza,
-          razonamientoClaude: matchClaude.razonamiento
-        };
-      }
-    }
-  } catch (e) {
-    console.warn("[MAU] Match con Claude falló, sigo con fallback:", e);
-  }
-
-  // 2) Fallback: matching mecánico por multiset de etiquetas
-  const { patron, calidadMatch } = await tgBuscarPatronSabana(paginasClasificadas);
-  if (patron && Array.isArray(patron.bloquesModal) && patron.bloquesModal.length) {
-    const bloquesRemapeados = tgRemapearPaginas(patron, paginasClasificadas);
-    return {
-      bloques: bloquesRemapeados,
-      origen: "patron",
-      patronUsado: patron.nombre || "(sin nombre)",
-      calidadMatch
-    };
-  }
-
-  // 3) Fallback final: auto-agrupado por consecutivas mismo tipo+persona
-  const bloques = tgAutoAgrupar(paginasClasificadas);
-  return { bloques, origen: "autoagrupado", patronUsado: null, calidadMatch: null };
-}
-
-/**
- * Construye el mensaje del PLAN de subida para mandar a Telegram.
- */
-function tgConstruirMensajePlan(plan) {
-  const partes = [];
-  if (plan.origen === "patron-claude") {
-    partes.push(`📋 <b>Plan de subida</b> (patrón: <i>${escapeHtml(plan.patronUsado)}</i>) 🧠 matcheado por Claude (confianza ${plan.confianzaClaude}%)`);
-    if (plan.razonamientoClaude) partes.push(`<i>${escapeHtml(plan.razonamientoClaude)}</i>`);
-  } else if (plan.origen === "patron") {
-    let etiquetaCalidad = "";
-    if (plan.calidadMatch === "exacto") etiquetaCalidad = " ✅ match exacto";
-    else if (plan.calidadMatch === "similar") etiquetaCalidad = " ⚠️ match similar";
-    else if (plan.calidadMatch === "por_cantidad") etiquetaCalidad = " ⚠️ match por cantidad de páginas (revisar bien)";
-    partes.push(`📋 <b>Plan de subida</b> (patrón aprendido: <i>${escapeHtml(plan.patronUsado)}</i>)${etiquetaCalidad}`);
-  } else {
-    partes.push(`📋 <b>Plan de subida</b> (no había patrón guardado, agrupé automático)`);
-  }
-  partes.push(`<b>${plan.bloques.length}</b> grupo(s):\n`);
-  let idx = 1;
-  for (const b of plan.bloques) {
-    const reqs = (b.requerimientos && b.requerimientos.length)
-      ? b.requerimientos.map(r => escapeHtml(r)).join(" + ")
-      : "<i>sin destino asignado</i>";
-    const nPaginas = (b.paginas || []).length;
-    const pagsTxt = (b.paginas || []).join(", ");
-    partes.push(`🟦 <b>Grupo ${idx}</b> — ${escapeHtml(b.nombre || "(sin nombre)")}`);
-    partes.push(`   📄 Páginas: ${pagsTxt} (${nPaginas} hoja${nPaginas === 1 ? "" : "s"})`);
-    partes.push(`   ➡️ Destino${b.requerimientos && b.requerimientos.length === 1 ? "" : "s"}: ${reqs}`);
-    partes.push("");
-    idx++;
-  }
-  if (plan.origen === "autoagrupado") {
-    partes.push(`<i>💡 Si esta agrupación no es correcta, cargá la sábana una vez por el panel manual (Bandeja.aspx) para que aprenda el patrón. Después la próxima vez ya viene auto.</i>`);
-  }
-  return partes.join("\n");
-}
 
 /**
  * Manda una foto (base64 JPEG) al chat de Telegram con caption opcional.
@@ -2219,7 +2059,7 @@ async function tgBajarArchivo(token, fileId) {
   const filePath = j1.result.file_path;
   const sizeBytes = j1.result.file_size || 0;
   if (sizeBytes && sizeBytes > TG_MAX_PDF_BYTES) {
-    throw new Error(`El archivo pesa ${(sizeBytes / 1024 / 1024).toFixed(1)} MB, máximo permitido 20 MB.`);
+    throw new Error(`El archivo pesa ${(sizeBytes / 1024 / 1024).toFixed(1)} MB, mÃ¡ximo permitido 20 MB.`);
   }
   const u2 = `https://api.telegram.org/file/bot${encodeURIComponent(token)}/${filePath}`;
   const r2 = await fetch(u2);
@@ -2235,135 +2075,6 @@ async function tgBajarArchivo(token, fileId) {
   const base64 = btoa(binario);
   return { base64, mediaType: "application/pdf", sizeBytes: bytes.length };
 }
-
-/**
- * Manda el PDF entero a Claude pidiendo clasificación página por página.
- * Devuelve un arreglo: [{ pagina, id, etiqueta, apellido, nombre, cuil, patente, periodo }, ...]
- */
-async function clasificarSabanaConClaude(base64Pdf) {
-  const { modelo } = await obtenerIAConfig();
-  const prompt = `Te paso un PDF "sábana" — varios documentos laborales argentinos pegados uno atrás del otro. Para CADA PÁGINA del PDF, decime qué tipo de documento es y los datos del empleado o vehículo, si aplica.
-
-Tipos posibles:
-${construirListaTipos()}
-
-REGLAS CLAVE:
-* Si la página tiene "ENTREGA DE ROPA DE TRABAJO" o "Resolución 299/11" o tabla con casco/botines/guantes → "entrega_epp".
-* Si dice "Planilla de asistencia" o "capacitación" → "capacitacion".
-* Tabla con jubilación/ley 19032/sindical/hs trabajadas → "recibo_haberes".
-* Página con logo ARCA + recuadro "931" + tablas "REGIMEN NACIONAL DE SEGURIDAD SOCIAL" → es "f931". Es el formulario de declaración jurada, nunca un ticket de banco.
-* Banco Provincia título "Pago" + "Número de VEP" + lista impuestos con códigos 351 (CONTRIBUCIONES SEG. SOCIAL), 301 (EMPLEADOR-APORTES SEG. SOCIAL), 352 (CONTRIBUCIONES OBRA SOCIAL), 302, 312 (ART), 28 (SEGURO DE VIDA) → es "pago_f931". Estos códigos son la señal definitiva.
-* Banco Provincia título "Nueva transferencia" + campo Referencia "VAR f.Desempleo" → SIEMPRE "transferencia_desempleo". No confundir: el pago_f931 tiene códigos de impuestos 351/301/352, el transferencia_desempleo tiene "Titular cuenta destino" y "VAR f.Desempleo".
-* Banco Provincia título "Pago" + dice "Nombre del Ente Abonado: UOCRA" (o "UOCRA - Online") → es "pago_uocra". Ningún otro ticket tiene ese campo con UOCRA. Con impuestos 308/358 (autónomos) → es "pago_autonomo".
-* NUNCA pongas como empleado al titular de la empresa "MATESIN CLAUDIO FABIAN" (CUIL 20-20999512-4), excepto si la página es claramente de "MATESIN GENARO" (que sí es empleado).
-* Si la página está rotada 90° o 180°, igual leela.
-
-Datos a extraer por página (solo del EMPLEADO, no de la empresa):
-- cuil: en formato 20-12345678-9, vacío si no se ve.
-- apellido y nombre: del trabajador.
-- patente: solo si el doc es de seguro automotor (ABC123 o AB123CD).
-- periodo: YYYY-MM si aparece.
-
-Respondé SOLO con un JSON válido, sin markdown ni explicaciones, así:
-{"paginas":[{"pagina":1,"id":"xxx","cuil":"","apellido":"","nombre":"","patente":"","periodo":""},{"pagina":2,"id":"xxx",...}]}
-
-Si no podés identificar el tipo de una página, usá "desconocido".`;
-
-  const body = {
-    model: modelo,
-    max_tokens: 4000,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64Pdf } },
-          { type: "text", text: prompt }
-        ]
-      }
-    ]
-  };
-
-  const json = await llamarClaudeMessages(body, "Claude API");
-  const textoRespuesta = (json?.content?.[0]?.text || "").trim();
-
-  // Parsear el JSON
-  let parsed = null;
-  try { parsed = JSON.parse(textoRespuesta); }
-  catch (_e) {
-    const m = textoRespuesta.match(/\{[\s\S]*\}/);
-    if (m) { try { parsed = JSON.parse(m[0]); } catch {} }
-  }
-  const arr = Array.isArray(parsed?.paginas) ? parsed.paginas : [];
-  // Normalizar
-  return arr.map((p, i) => {
-    const idCrudo = String(p?.id || "").toLowerCase().replace(/[^a-z0-9_]/g, "");
-    const tipo = TIPOS_DOCUMENTO.find(t => t.id === idCrudo);
-    return {
-      pagina: typeof p?.pagina === "number" ? p.pagina : (i + 1),
-      id: tipo ? tipo.id : "desconocido",
-      etiqueta: tipo ? tipo.etiqueta : "",
-      cuil: String(p?.cuil || "").trim(),
-      apellido: String(p?.apellido || "").trim(),
-      nombre: String(p?.nombre || "").trim(),
-      patente: String(p?.patente || "").trim(),
-      periodo: String(p?.periodo || "").trim()
-    };
-  });
-}
-
-/**
- * Construye el mensaje preview de la clasificación de la sábana.
- */
-function tgConstruirPreviewSabana(paginas, nombreArchivo, sizeBytes) {
-  if (!paginas.length) {
-    return `⚠️ Recibí <b>${escapeHtml(nombreArchivo)}</b> pero no pude clasificar ninguna página. Probá de nuevo o subí el PDF a mano.`;
-  }
-  // Agrupar por tipo (id) para el resumen
-  const conteos = {};
-  for (const p of paginas) {
-    const k = p.etiqueta || "(sin etiqueta)";
-    conteos[k] = (conteos[k] || 0) + 1;
-  }
-  const totalReconocidos = paginas.filter(p => p.id !== "desconocido").length;
-  const totalDudosos = paginas.length - totalReconocidos;
-
-  const partes = [
-    `📥 <b>Sábana recibida</b>: ${escapeHtml(nombreArchivo)} (${(sizeBytes / 1024).toFixed(0)} KB)`,
-    `Detecté <b>${paginas.length}</b> páginas:`,
-    ""
-  ];
-
-  // Resumen por tipo
-  for (const [etiqueta, n] of Object.entries(conteos)) {
-    partes.push(`• <b>${n}</b> × ${escapeHtml(etiqueta)}`);
-  }
-
-  partes.push("");
-  partes.push("<b>Detalle por página:</b>");
-  for (const p of paginas) {
-    const persona = [p.apellido, p.nombre].filter(Boolean).join(" ").trim();
-    const ico = p.id === "desconocido" ? "❓" : "📄";
-    const etiqueta = p.etiqueta || p.id;
-    const extras = [];
-    if (persona) extras.push(persona);
-    if (p.cuil) extras.push(p.cuil);
-    if (p.patente) extras.push(`patente ${p.patente}`);
-    if (p.periodo) extras.push(p.periodo);
-    const cola = extras.length ? ` — ${extras.join(" · ")}` : "";
-    partes.push(`${ico} Pág. ${p.pagina}: ${escapeHtml(etiqueta)}${escapeHtml(cola)}`);
-  }
-
-  partes.push("");
-  if (totalDudosos > 0) {
-    partes.push(`⚠️ Hay <b>${totalDudosos}</b> página(s) que no pude clasificar bien (marcadas con ❓).`);
-  }
-  partes.push("");
-  partes.push(`👉 Etapa 1 lista. Cuando armemos la Etapa 2, vas a poder responder <b>SI</b> para que suba todo, o <b>NO</b> para cancelar.`);
-
-  return partes.join("\n");
-}
-
-// ===================== ETAPA 2: SUBIDA REAL DE LA SÁBANA =====================
 
 /**
  * Busca o abre Bandeja.aspx (donde corre el panel manual).
@@ -2411,45 +2122,45 @@ async function tgDispararSubidaEnPanel(tabId, base64Pdf, fileName, bloquesPlan) 
       const wait = ms => new Promise(r => setTimeout(r, ms));
       const log = (s) => { try { console.log("[MAU TG-Etapa2]", s); } catch {} };
 
-      // 1) Esperar a que el panel esté montado y que window.MAUPanel exista
-      log("Esperando window.MAUPanel…");
+      // 1) Esperar a que el panel estÃ© montado y que window.MAUPanel exista
+      log("Esperando window.MAUPanelâ€¦");
       const t0 = Date.now();
       while (!window.MAUPanel && Date.now() - t0 < 30000) {
         await wait(500);
       }
       if (!window.MAUPanel) {
-        return { ok: false, error: "El panel no expone window.MAUPanel. Recargá la extensión." };
+        return { ok: false, error: "El panel no expone window.MAUPanel. RecargÃ¡ la extensiÃ³n." };
       }
       const P = window.MAUPanel;
 
-      // 2) Detectar requerimientos si están vacíos
+      // 2) Detectar requerimientos si estÃ¡n vacÃ­os
       try {
         if (!P.estado.requerimientos || !P.estado.requerimientos.length) {
-          log("Detectando requerimientos pendientes…");
+          log("Detectando requerimientos pendientesâ€¦");
           await P.detectarRequerimientosPendientes();
         }
       } catch (e) {
-        return { ok: false, error: "Falló detectarRequerimientosPendientes: " + (e.message || e) };
+        return { ok: false, error: "FallÃ³ detectarRequerimientosPendientes: " + (e.message || e) };
       }
 
       if (!P.estado.requerimientos || !P.estado.requerimientos.length) {
-        return { ok: false, error: "No se detectaron requerimientos pendientes en la página." };
+        return { ok: false, error: "No se detectaron requerimientos pendientes en la pÃ¡gina." };
       }
       log(`Requerimientos detectados: ${P.estado.requerimientos.length}`);
 
-      // 3) Convertir base64 → File
+      // 3) Convertir base64 â†’ File
       const bin = atob(b64);
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const file = new File([bytes], name, { type: "application/pdf" });
 
-      // 4) Aplicar los bloques pre-calculados en Etapa 1 (sin re-clasificar con Claude).
-      //    Los bloques ya tienen cuil/apellido en meta desde la clasificación de Etapa 1.
-      log("Aplicando bloques (clasificación ya hecha en Etapa 1)…");
+      // 4) Aplicar los bloques pre-calculados por el match visual.
+      //    Los bloques ya incluyen metadata generica cuando fue posible leerla.
+      log("Aplicando bloques del match visual...");
       try {
         await P.aplicarBloquesModal(file, bloques);
       } catch (e) {
-        return { ok: false, error: "Falló aplicarBloquesModal: " + (e.message || e) };
+        return { ok: false, error: "FallÃ³ aplicarBloquesModal: " + (e.message || e) };
       }
 
       // 5) Verificar que se asignaron archivos
@@ -2457,13 +2168,13 @@ async function tgDispararSubidaEnPanel(tabId, base64Pdf, fileName, bloquesPlan) 
       const totalConArchivo = filas.filter(f => f.archivo).length;
       log(`Filas con archivo asignado: ${totalConArchivo}/${filas.length}`);
       if (totalConArchivo === 0) {
-        return { ok: false, error: "Después de aplicar los bloques, ninguna fila quedó con archivo." };
+        return { ok: false, error: "DespuÃ©s de aplicar los bloques, ninguna fila quedÃ³ con archivo." };
       }
 
-      // 6) Procesar todo (esto sí hace clicks en la página de controldoc)
-      log("Llamando a procesarTodo()…");
+      // 6) Procesar todo (esto sÃ­ hace clicks en la pÃ¡gina de controldoc)
+      log("Llamando a procesarTodo()â€¦");
       try {
-        // procesarTodo no se await porque puede tardar mucho y bloquearía el sw.
+        // procesarTodo no se await porque puede tardar mucho y bloquearÃ­a el sw.
         // En su lugar, lo lanzamos y polleamos el estado.filas.
         const promesaProc = P.procesarTodo();
 
@@ -2472,12 +2183,12 @@ async function tgDispararSubidaEnPanel(tabId, base64Pdf, fileName, bloquesPlan) 
         // Sin esto, el primer poll ve 0 filas procesando y sale prematuramente.
         await wait(12000);
 
-        // Esperar máximo 15 minutos hasta que todas las filas lleguen a un estado terminal
+        // Esperar mÃ¡ximo 15 minutos hasta que todas las filas lleguen a un estado terminal
         const tSub = Date.now();
         while (Date.now() - tSub < 900000) {
           await wait(4000);
           const filasAhora = (P.estado.filas || []).filter(f => f.archivo);
-          // "en proceso" = todavía hay filas activas o sin empezar
+          // "en proceso" = todavÃ­a hay filas activas o sin empezar
           const enProceso = filasAhora.some(f => {
             const est = String(f.estado || "").toLowerCase();
             return est === "procesando" || est === "subiendo" || est === "enviando" || est === "pendiente" || est === "";
@@ -2499,7 +2210,7 @@ async function tgDispararSubidaEnPanel(tabId, base64Pdf, fileName, bloquesPlan) 
           new Promise(r => setTimeout(r, 15000))
         ]);
       } catch (e) {
-        return { ok: false, error: "Falló procesarTodo: " + (e.message || e) };
+        return { ok: false, error: "FallÃ³ procesarTodo: " + (e.message || e) };
       }
 
       // 7) Recolectar resultados desde estado.filas
@@ -2514,9 +2225,9 @@ async function tgDispararSubidaEnPanel(tabId, base64Pdf, fileName, bloquesPlan) 
           okCount++;
         } else if (est === "error" || est.startsWith("error")) {
           errCount++;
-          errores.push(`${f.nombre || f.requerimiento || "?"}: ${f.estado}${f.error ? " — " + f.error : ""}`);
+          errores.push(`${f.nombre || f.requerimiento || "?"}: ${f.estado}${f.error ? " â€” " + f.error : ""}`);
         } else {
-          // Estado raro/desconocido — lo cuento como error para no engañar
+          // Estado raro/desconocido â€” lo cuento como error para no engaÃ±ar
           errCount++;
           errores.push(`${f.nombre || f.requerimiento || "?"}: ${f.estado || "estado desconocido"}`);
         }
@@ -2526,29 +2237,29 @@ async function tgDispararSubidaEnPanel(tabId, base64Pdf, fileName, bloquesPlan) 
     },
     args: [base64Pdf, fileName, bloquesPlan]
   });
-  return result || { ok: false, error: "executeScript no devolvió resultado" };
+  return result || { ok: false, error: "executeScript no devolviÃ³ resultado" };
 }
 
 /**
- * Handler cuando el usuario manda "SI" después del preview de un documento.
- * Devuelve true si había un doc pendiente (lo manejó), false si no había nada.
+ * Handler cuando el usuario manda "SI" despuÃ©s del preview de un documento.
+ * Devuelve true si habÃ­a un doc pendiente (lo manejÃ³), false si no habÃ­a nada.
  */
 async function tgConfirmarSubidaDoc(cfg) {
-  const data = await chrome.storage.local.get("matesin_tg_pendiente_doc");
-  const pendiente = data.matesin_tg_pendiente_doc;
+  const data = await chrome.storage.local.get(KEY_TG_PENDIENTE_DOC);
+  const pendiente = data[KEY_TG_PENDIENTE_DOC];
   if (!pendiente?.fileId || !pendiente?.bloques?.length) return false;
 
   const log = (txt) => tgEnviarMensaje(cfg.token, cfg.chatId, txt).catch(e => console.warn("[MAU] log fail", e));
   const t0 = Date.now();
 
-  await log(`🚀 Subiendo <b>${escapeHtml(pendiente.nombreArchivo)}</b>…\n⏳ Re-bajando el PDF de Telegram…`);
+  await log(`ðŸš€ Subiendo <b>${escapeHtml(pendiente.nombreArchivo)}</b>â€¦\nâ³ Re-bajando el PDF de Telegramâ€¦`);
 
   let base64;
   try {
     const r = await tgBajarArchivo(cfg.token, pendiente.fileId);
     base64 = r.base64;
   } catch (e) {
-    await log(`❌ No pude re-bajar el archivo: ${escapeHtml(e.message || String(e))}`);
+    await log(`âŒ No pude re-bajar el archivo: ${escapeHtml(e.message || String(e))}`);
     return true;
   }
 
@@ -2557,27 +2268,27 @@ async function tgConfirmarSubidaDoc(cfg) {
     const tab = await tgConseguirTabBandeja();
     tabId = tab.tabId;
   } catch (e) {
-    await log(`❌ Necesitás una pestaña de controldocumentario.com abierta.`);
+    await log(`âŒ NecesitÃ¡s una pestaÃ±a de controldocumentario.com abierta.`);
     return true;
   }
 
-  await log(`✅ Bandeja abierta.\n⏳ Subiendo archivos…`);
+  await log(`âœ… Bandeja abierta.\nâ³ Subiendo archivosâ€¦`);
 
   let res;
   try {
     res = await tgDispararSubidaEnPanel(tabId, base64, pendiente.nombreArchivo, pendiente.bloques);
   } catch (e) {
-    await log(`❌ Falló al subir: ${escapeHtml(e.message || String(e))}`);
+    await log(`âŒ FallÃ³ al subir: ${escapeHtml(e.message || String(e))}`);
     return true;
   }
 
   // Limpiar pendiente
-  try { await chrome.storage.local.remove("matesin_tg_pendiente_doc"); } catch {}
+  try { await chrome.storage.local.remove(KEY_TG_PENDIENTE_DOC); } catch {}
 
   const tTotal = Math.round((Date.now() - t0) / 1000);
 
   if (!res.ok) {
-    await log(`⚠️ La subida no se pudo completar:\n<i>${escapeHtml(res.error || "Razón desconocida")}</i>`);
+    await log(`âš ï¸ La subida no se pudo completar:\n<i>${escapeHtml(res.error || "RazÃ³n desconocida")}</i>`);
     return true;
   }
 
@@ -2585,19 +2296,19 @@ async function tgConfirmarSubidaDoc(cfg) {
   const personas = (pendiente.bloques || []).map(b => b.meta?.apellido || "").filter(Boolean);
 
   if (res.errCount === 0) {
-    const lineasOk = personas.map(p => `✅ Requerimiento encontrado y subido para <b>${escapeHtml(p)}</b>`);
+    const lineasOk = personas.map(p => `âœ… Requerimiento encontrado y subido para <b>${escapeHtml(p)}</b>`);
     await log(
-      `✅ <b>Todos los archivos fueron subidos correctamente</b> en ${tTotal}s.\n\n` +
+      `âœ… <b>Todos los archivos fueron subidos correctamente</b> en ${tTotal}s.\n\n` +
       lineasOk.join("\n")
     );
   } else {
     const partes = [
-      `⚠️ <b>Subida completada con errores</b> en ${tTotal}s.`,
-      `📊 ${res.okCount} OK · ${res.errCount} con error · ${res.totalCount} total`,
+      `âš ï¸ <b>Subida completada con errores</b> en ${tTotal}s.`,
+      `ðŸ“Š ${res.okCount} OK Â· ${res.errCount} con error Â· ${res.totalCount} total`,
       ""
     ];
     for (const e of (res.errores || []).slice(0, 10)) {
-      partes.push(`❌ ${escapeHtml(e)}`);
+      partes.push(`âŒ ${escapeHtml(e)}`);
     }
     await log(partes.join("\n"));
   }
@@ -2606,71 +2317,71 @@ async function tgConfirmarSubidaDoc(cfg) {
 }
 
 /**
- * Handler cuando el usuario manda "SI" después de un preview de sábana.
+ * Handler cuando el usuario manda "SI" despuÃ©s de un preview de sÃ¡bana.
  */
 async function tgConfirmarSubidaSabana(cfg) {
-  const data = await chrome.storage.local.get("matesin_tg_pendiente_sabana");
-  const pendiente = data.matesin_tg_pendiente_sabana;
+  const data = await chrome.storage.local.get(KEY_TG_PENDIENTE_SABANA);
+  const pendiente = data[KEY_TG_PENDIENTE_SABANA];
   if (!pendiente || !pendiente.fileId) {
-    await tgEnviarMensaje(cfg.token, cfg.chatId, "ℹ️ No tengo ninguna sábana pendiente. Mandame primero el PDF.");
+    await tgEnviarMensaje(cfg.token, cfg.chatId, "â„¹ï¸ No tengo ninguna sÃ¡bana pendiente. Mandame primero el PDF.");
     return;
   }
 
   const log = (txt) => tgEnviarMensaje(cfg.token, cfg.chatId, txt).catch(e => console.warn("[MAU] log fail", e));
   const t0 = Date.now();
 
-  await log(`🚀 Arrancando subida de <b>${escapeHtml(pendiente.nombreArchivo)}</b>…\n⏳ Paso 1/4: re-bajando el PDF de Telegram…`);
+  await log(`ðŸš€ Arrancando subida de <b>${escapeHtml(pendiente.nombreArchivo)}</b>â€¦\nâ³ Paso 1/4: re-bajando el PDF de Telegramâ€¦`);
 
   // Re-bajar el PDF original (no lo guardamos para no llenar la memoria)
   const { base64 } = await tgBajarArchivo(cfg.token, pendiente.fileId);
-  await log(`✅ Bajado.\n⏳ Paso 2/4: abriendo Bandeja.aspx en el navegador…`);
+  await log(`âœ… Bajado.\nâ³ Paso 2/4: abriendo Bandeja.aspx en el navegadorâ€¦`);
 
   // Abrir/encontrar Bandeja
   const { tabId } = await tgConseguirTabBandeja();
-  await log(`✅ Bandeja abierta.\n⏳ Paso 3/4: inyectando el PDF en el panel y disparando OCR + asignación…\n💡 Esto tarda 1-3 min según el tamaño.`);
+  await log(`âœ… Bandeja abierta.\nâ³ Paso 3/4: inyectando el PDF en el panel y disparando OCR + asignaciÃ³nâ€¦\nðŸ’¡ Esto tarda 1-3 min segÃºn el tamaÃ±o.`);
 
-  // Disparar el flujo en el panel — usa los bloques YA armados en Etapa 1 (sin Claude extra)
+  // Disparar el flujo en el panel â€” usa los bloques YA armados en Etapa 1 (sin Claude extra)
   const bloques = (pendiente.plan && Array.isArray(pendiente.plan.bloques)) ? pendiente.plan.bloques : [];
   if (!bloques.length) {
-    await log(`❌ No hay bloques en el plan guardado. Mandá el PDF de nuevo.`);
+    await log(`âŒ No hay bloques en el plan guardado. MandÃ¡ el PDF de nuevo.`);
     return;
   }
   let res;
   try {
     res = await tgDispararSubidaEnPanel(tabId, base64, pendiente.nombreArchivo, bloques);
   } catch (e) {
-    await log(`❌ Falló al ejecutar en el panel: ${escapeHtml(e.message || String(e))}`);
+    await log(`âŒ FallÃ³ al ejecutar en el panel: ${escapeHtml(e.message || String(e))}`);
     throw e;
   }
 
   if (!res.ok) {
-    await log(`⚠️ La subida no se pudo completar:\n<i>${escapeHtml(res.error || "Razón desconocida")}</i>\n\nProbá a mano desde el panel de Bandeja.aspx.`);
+    await log(`âš ï¸ La subida no se pudo completar:\n<i>${escapeHtml(res.error || "RazÃ³n desconocida")}</i>\n\nProbÃ¡ a mano desde el panel de Bandeja.aspx.`);
     return;
   }
 
   const tTotal = Math.round((Date.now() - t0) / 1000);
   const partes = [
-    `✅ <b>Subida terminada</b> en ${tTotal}s.`,
-    `📊 ${res.okCount} OK · ${res.errCount} con error · ${res.totalCount} total`
+    `âœ… <b>Subida terminada</b> en ${tTotal}s.`,
+    `ðŸ“Š ${res.okCount} OK Â· ${res.errCount} con error Â· ${res.totalCount} total`
   ];
   if (res.errores && res.errores.length) {
     partes.push("");
     partes.push("<b>Errores:</b>");
-    for (const e of res.errores.slice(0, 10)) partes.push(`❌ ${escapeHtml(e)}`);
-    if (res.errores.length > 10) partes.push(`…y ${res.errores.length - 10} más.`);
+    for (const e of res.errores.slice(0, 10)) partes.push(`âŒ ${escapeHtml(e)}`);
+    if (res.errores.length > 10) partes.push(`â€¦y ${res.errores.length - 10} mÃ¡s.`);
   }
   await log(partes.join("\n"));
 
   // Limpiar pendiente
-  try { await chrome.storage.local.remove("matesin_tg_pendiente_sabana"); } catch {}
+  try { await chrome.storage.local.remove(KEY_TG_PENDIENTE_SABANA); } catch {}
 }
 
 /**
  * Handler principal cuando el usuario manda un PDF al bot.
- * Manda mensajes intermedios para que se vea en qué paso va.
+ * Manda mensajes intermedios para que se vea en quÃ© paso va.
  */
 /**
- * Lee todas las referencias de imágenes desde el IndexedDB del tab.
+ * Lee todas las referencias de imÃ¡genes desde el IndexedDB del tab.
  * Soporta formato nuevo (imagenesPorBloque) y viejo (imagenes).
  */
 async function tgLeerReferenciasConImagenes(tabId, nombresPatrones) {
@@ -2734,7 +2445,7 @@ async function tgManejarDocumento(cfg, doc) {
   const t0 = Date.now();
   const log = (txt) => tgEnviarMensaje(cfg.token, cfg.chatId, txt).catch(e => console.warn("[MAU] log fail", e));
 
-  await log(`📩 <b>Documento recibido</b>: ${escapeHtml(nombreArchivo)} (${(sizeBytes / 1024).toFixed(0)} KB)\n⏳ Bajando de Telegram…`);
+  await log(`ðŸ“© <b>Documento recibido</b>: ${escapeHtml(nombreArchivo)} (${(sizeBytes / 1024).toFixed(0)} KB)\nâ³ Bajando de Telegramâ€¦`);
 
   // 1) Bajar el PDF
   let base64, realSize;
@@ -2743,50 +2454,50 @@ async function tgManejarDocumento(cfg, doc) {
     base64 = baseInfo.base64;
     realSize = baseInfo.sizeBytes;
   } catch (e) {
-    await log(`❌ No pude bajar el archivo: ${escapeHtml(e.message || String(e))}`);
+    await log(`âŒ No pude bajar el archivo: ${escapeHtml(e.message || String(e))}`);
     return;
   }
 
   // 2) Conseguir tab de Bandeja (necesaria para renderizar y luego subir)
-  await log(`✅ Bajado (${(realSize / 1024).toFixed(0)} KB).\n⏳ Abriendo controldocumentario.com…`);
+  await log(`âœ… Bajado (${(realSize / 1024).toFixed(0)} KB).\nâ³ Abriendo controldocumentario.comâ€¦`);
   let tabId, abrimosNosotros;
   try {
     const tab = await tgConseguirTabBandeja();
     tabId = tab.tabId;
     abrimosNosotros = tab.abrimosNosotros;
   } catch (e) {
-    await log(`❌ Necesitás una pestaña de controldocumentario.com abierta.`);
+    await log(`âŒ NecesitÃ¡s una pestaÃ±a de controldocumentario.com abierta.`);
     return;
   }
 
   try {
-    // 3) Renderizar páginas como imágenes
-    await log(`✅ Listo.\n⏳ Renderizando páginas como imágenes…`);
+    // 3) Renderizar pÃ¡ginas como imÃ¡genes
+    await log(`âœ… Listo.\nâ³ Renderizando pÃ¡ginas como imÃ¡genesâ€¦`);
     let nuevasPaginas;
     try {
       nuevasPaginas = await tgRenderPdfEnImagenes(base64, tabId);
-      if (!nuevasPaginas.length) throw new Error("No se renderizó ninguna página.");
+      if (!nuevasPaginas.length) throw new Error("No se renderizÃ³ ninguna pÃ¡gina.");
     } catch (e) {
-      await log(`❌ Necesitás una pestaña de controldocumentario.com abierta.\n${escapeHtml(e.message || String(e))}`);
+      await log(`âŒ NecesitÃ¡s una pestaÃ±a de controldocumentario.com abierta.\n${escapeHtml(e.message || String(e))}`);
       return;
     }
 
     // 4) Cargar referencias del mapeo desde IndexedDB del tab
-    await log(`✅ ${nuevasPaginas.length} página(s) renderizada(s).\n⏳ Cargando mapeo guardado…`);
+    await log(`âœ… ${nuevasPaginas.length} pÃ¡gina(s) renderizada(s).\nâ³ Cargando mapeo guardadoâ€¦`);
     const dataPatrones = await chrome.storage.local.get(KEY_PATRONES_SABANA);
     const patrones = (dataPatrones[KEY_PATRONES_SABANA] || []).filter(p => p.nombre);
     if (!patrones.length) {
-      await log(`❌ No tenés ningún mapeo guardado. Hacé un mapeo primero desde "Aprender" en la extensión.`);
+      await log(`âŒ No tenÃ©s ningÃºn mapeo guardado. HacÃ© un mapeo primero desde "Aprender" en la extensiÃ³n.`);
       return;
     }
     const referenciasDisponibles = await tgLeerReferenciasConImagenes(tabId, patrones.map(p => p.nombre));
     if (!referenciasDisponibles.length) {
-      await log(`❌ Hacé un mapeo primero desde "Aprender" en la extensión.`);
+      await log(`âŒ HacÃ© un mapeo primero desde "Aprender" en la extensiÃ³n.`);
       return;
     }
 
-    // 5) Claude machea imagen vs imagen — 1 sola llamada por mapeo hasta encontrar
-    await log(`⏳ Claude macheando el documento con el mapeo (${referenciasDisponibles.length} mapeo(s))…`);
+    // 5) Claude machea imagen vs imagen â€” 1 sola llamada por mapeo hasta encontrar
+    await log(`â³ Claude macheando el documento con el mapeo (${referenciasDisponibles.length} mapeo(s))â€¦`);
     let bloquesFinales = null;
     let bloquesDescartados = [];
     for (const ref of referenciasDisponibles) {
@@ -2795,7 +2506,7 @@ async function tgManejarDocumento(cfg, doc) {
         if (resultado?.length) {
           bloquesFinales = resultado;
           bloquesDescartados = resultado.descartados || [];
-          console.log(`[MAU][TG] ✅ Macheó con "${ref.nombre}": ${resultado.length} bloque(s), ${bloquesDescartados.length} descartado(s)`);
+          console.log(`[MAU][TG] âœ… MacheÃ³ con "${ref.nombre}": ${resultado.length} bloque(s), ${bloquesDescartados.length} descartado(s)`);
           break;
         }
       } catch (e) {
@@ -2803,13 +2514,13 @@ async function tgManejarDocumento(cfg, doc) {
       }
     }
     if (!bloquesFinales?.length) {
-      await log(`❌ El archivo es muy distinto al mapeado, revisá que sea el correcto.`);
+      await log(`âŒ El archivo es muy distinto al mapeado, revisÃ¡ que sea el correcto.`);
       return;
     }
 
-    // 6) Guardar pendiente y pedir confirmación al usuario
+    // 6) Guardar pendiente y pedir confirmaciÃ³n al usuario
     await chrome.storage.local.set({
-      matesin_tg_pendiente_doc: {
+      [KEY_TG_PENDIENTE_DOC]: {
         fileId,
         nombreArchivo,
         bloques: bloquesFinales,
@@ -2823,31 +2534,31 @@ async function tgManejarDocumento(cfg, doc) {
       const nPagsDoc = (b.paginas || []).length;
       const nPagsMapeo = b.paginasMapeo || nPagsDoc;
       return (
-        `👤 <b>${escapeHtml(persona)}</b>\n` +
-        `   Bloque original: ${nPagsMapeo} pág${nPagsMapeo !== 1 ? "s" : ""}. · Tu documento: ${nPagsDoc} pág${nPagsDoc !== 1 ? "s" : ""}. ✅ Macheado correctamente`
+        `ðŸ‘¤ <b>${escapeHtml(persona)}</b>\n` +
+        `   Bloque original: ${nPagsMapeo} pÃ¡g${nPagsMapeo !== 1 ? "s" : ""}. Â· Tu documento: ${nPagsDoc} pÃ¡g${nPagsDoc !== 1 ? "s" : ""}. âœ… Macheado correctamente`
       );
     });
 
-    // Mostrar también los bloques descartados por páginas incompletas
+    // Mostrar tambiÃ©n los bloques descartados por pÃ¡ginas incompletas
     const lineasDescartadas = bloquesDescartados.map(b => {
       const persona = b.meta?.apellido || "Sin nombre";
       const nPagsDoc = (b.paginas || []).length;
       const nPagsMapeo = b.paginasMapeo || 0;
       return (
-        `👤 <b>${escapeHtml(persona)}</b>\n` +
-        `   Bloque original: ${nPagsMapeo} pág${nPagsMapeo !== 1 ? "s" : ""}. · Tu documento: ${nPagsDoc} pág${nPagsDoc !== 1 ? "s" : ""}. ⚠️ Páginas incompletas — NO se sube`
+        `ðŸ‘¤ <b>${escapeHtml(persona)}</b>\n` +
+        `   Bloque original: ${nPagsMapeo} pÃ¡g${nPagsMapeo !== 1 ? "s" : ""}. Â· Tu documento: ${nPagsDoc} pÃ¡g${nPagsDoc !== 1 ? "s" : ""}. âš ï¸ PÃ¡ginas incompletas â€” NO se sube`
       );
     });
 
     const parteDescartados = lineasDescartadas.length
-      ? `\n\n<b>No se van a subir (páginas incompletas):</b>\n\n` + lineasDescartadas.join("\n\n")
+      ? `\n\n<b>No se van a subir (pÃ¡ginas incompletas):</b>\n\n` + lineasDescartadas.join("\n\n")
       : "";
 
     await log(
-      `✅ Coincidencia${bloquesFinales.length > 1 ? "s" : ""} encontrada${bloquesFinales.length > 1 ? "s" : ""}:\n\n` +
+      `âœ… Coincidencia${bloquesFinales.length > 1 ? "s" : ""} encontrada${bloquesFinales.length > 1 ? "s" : ""}:\n\n` +
       lineasResumen.join("\n\n") +
       parteDescartados +
-      `\n\n¿Lo subimos? Respondé <b>SI</b> para confirmar.`
+      `\n\nÂ¿Lo subimos? RespondÃ© <b>SI</b> para confirmar.`
     );
 
   } finally {
@@ -2859,10 +2570,10 @@ async function tgManejarDocumento(cfg, doc) {
 
 // ============================== TELEGRAM: VENCIMIENTOS =================================
 
-// Umbral fijo: alertar siempre con vencimientos a 10 días o menos.
+// Umbral fijo: alertar siempre con vencimientos a 10 dÃ­as o menos.
 const TG_UMBRAL_DIAS = 10;
 
-// Lock para que dos chequeos no corran a la vez (manual + automático, etc.)
+// Lock para que dos chequeos no corran a la vez (manual + automÃ¡tico, etc.)
 let tgChequeoEnCurso = false;
 
 async function tgChequearYAvisar({ forzarEnvio, visible }) {
@@ -2886,19 +2597,19 @@ async function tgChequearYAvisarInterno({ forzarEnvio, visible }) {
 
   let extraido = await tgExtraerVencimientosDesdeTab(TG_UMBRAL_DIAS, TG_UMBRAL_DIAS, !!visible);
 
-  // Si el sitio nos mandó al login, intentar re-loguearse con las credenciales guardadas.
+  // Si el sitio nos mandÃ³ al login, intentar re-loguearse con las credenciales guardadas.
   if (extraido.loginRequerido) {
-    console.log("[MAU] Sesión cerrada. Intentando re-login automático…");
+    console.log("[MAU] SesiÃ³n cerrada. Intentando re-login automÃ¡ticoâ€¦");
     const rLogin = await cdReLogin({ visible: false });
 
     if (rLogin.ok) {
-      console.log("[MAU] Re-login OK. Reintentando extracción de vencimientos…");
+      console.log("[MAU] Re-login OK. Reintentando extracciÃ³n de vencimientosâ€¦");
       extraido = await tgExtraerVencimientosDesdeTab(TG_UMBRAL_DIAS, TG_UMBRAL_DIAS, !!visible);
     }
 
-    // Si aún así quedó loginRequerido, o el re-login falló → avisar por Telegram.
+    // Si aÃºn asÃ­ quedÃ³ loginRequerido, o el re-login fallÃ³ â†’ avisar por Telegram.
     if (!rLogin.ok || extraido.loginRequerido) {
-      const motivo = rLogin.motivo || "El sitio siguió pidiendo login después del intento.";
+      const motivo = rLogin.motivo || "El sitio siguiÃ³ pidiendo login despuÃ©s del intento.";
       const tieneCreds = !!(await chrome.storage.local.get([KEY_CD_USER, KEY_CD_PASS]))[KEY_CD_USER];
       const mensajeLogin = tieneCreds
         ? [
@@ -2925,13 +2636,13 @@ async function tgChequearYAvisarInterno({ forzarEnvio, visible }) {
   const totalLeidos = extraido.totalConFecha || 0;
   // Quitar el pie (que cambia con la hora) para el dedupe
   const mensaje = tgConstruirMensaje(items, TG_UMBRAL_DIAS, TG_UMBRAL_DIAS, totalLeidos);
-  const cuerpoParaHash = mensaje.split("\n\n<i>—")[0];
+  const cuerpoParaHash = mensaje.split("\n\n<i>â€”")[0];
 
   const prev = await chrome.storage.local.get(KEY_TG_ULTIMO_HASH);
   const hashActual = hashRapido(cuerpoParaHash);
   const iguales = prev[KEY_TG_ULTIMO_HASH] === hashActual;
 
-  // Si no hay cambios respecto al último aviso, no reenviar (ni cuando todo OK ni cuando hay alertas iguales).
+  // Si no hay cambios respecto al Ãºltimo aviso, no reenviar (ni cuando todo OK ni cuando hay alertas iguales).
   if (!forzarEnvio && iguales) {
     return { enviado: false, mensaje: "Sin cambios desde el \u00faltimo aviso. No se reenvi\u00f3." };
   }
@@ -2989,13 +2700,21 @@ async function llamarClaudeMessages(body, etiquetaError) {
   return await resp.json();
 }
 
-function construirListaTipos() {
-  return TIPOS_DOCUMENTO.map((t) => `- ${t.id}: ${t.desc}`).join("\n");
-}
-
-async function clasificarPaginaConClaude(base64, mediaType) {
+async function extraerMetadataPaginaConClaude(base64, mediaType) {
   const { modelo } = await obtenerIAConfig();
-  const prompt = `Clasificá esta página en uno de estos ids:\n${construirListaTipos()}\n\nRespondé SOLO JSON:\n{"id":"xxx","cuil":"","apellido":"","nombre":"","patente":"","periodo":"","textoEstable":""}`;
+  const prompt = `Lee esta pagina de un documento laboral o vehicular.
+
+Extrae solo datos visibles y genericos. No clasifiques el tipo de documento, no infieras el destino y no uses nombres de entidades como criterio.
+
+Reglas:
+- Si hay una persona trabajadora claramente identificada, devuelve su apellido y nombre. No pongas como persona al empleador, empresa, titular, banco, organismo, aseguradora, sindicato ni prestador.
+- Si hay CUIL/CUIT de la persona trabajadora, devuelvelo. Si solo se ve el CUIT/CUIL del empleador o de una entidad, dejalo vacio.
+- Si hay patente de vehiculo, devuelvela.
+- Si hay periodo o mes/anio, devuelvelo en formato YYYY-MM cuando sea posible.
+- textoEstable debe ser una lista breve de palabras visibles utiles para reconocer la pagina despues, sin datos sensibles innecesarios.
+
+Responde SOLO JSON valido:
+{"cuil":"","apellido":"","nombre":"","patente":"","periodo":"","textoEstable":""}`;
 
   const body = {
     model: modelo,
@@ -3024,13 +2743,9 @@ async function clasificarPaginaConClaude(base64, mediaType) {
     }
   }
 
-  const idCrudo = String(parsed?.id || "").toLowerCase().replace(/[^a-z0-9_]/g, "");
-  const tipo = TIPOS_DOCUMENTO.find((t) => t.id === idCrudo);
-  const id = tipo ? tipo.id : "desconocido";
-  const etiqueta = tipo ? tipo.etiqueta : "";
   return {
-    id,
-    etiqueta,
+    id: "pagina",
+    etiqueta: "",
     cuil: String(parsed?.cuil || "").trim(),
     apellido: String(parsed?.apellido || "").trim(),
     nombre: String(parsed?.nombre || "").trim(),
@@ -3077,4 +2792,3 @@ async function debugEstadoIA() {
     prueba
   };
 }
-

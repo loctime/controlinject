@@ -16,6 +16,8 @@ const fbPasswordEl = document.getElementById("fb-password");
 const fbLoginFormEl = document.getElementById("login-form");
 const fbLoginInfoEl = document.getElementById("login-info");
 const fbUserLabelEl = document.getElementById("fb-user-label");
+const cfBaseUrlEl = document.getElementById("cf-baseurl");
+const cfDebugOutputEl = document.getElementById("cf-debug-output");
 
 function mostrar(msg, tipo) {
   estadoEl.textContent = msg;
@@ -38,6 +40,7 @@ async function actualizarUILogin() {
 
 async function cargarConfig() {
   await actualizarUILogin();
+  await cargarControlFileBaseUrl();
   try {
     const r = await chrome.runtime.sendMessage({ action: "auth:getCreds" });
     if (r?.ok) {
@@ -62,6 +65,15 @@ async function cargarConfig() {
     }
   } catch (e) {
     // Silencioso: si todavía no existe la config, queda vacío.
+  }
+}
+
+async function cargarControlFileBaseUrl() {
+  try {
+    const r = await chrome.runtime.sendMessage({ action: "controlfile:getBaseUrl" });
+    if (r?.ok && cfBaseUrlEl) cfBaseUrlEl.value = r.data?.baseUrl || "";
+  } catch (_) {
+    // Silencioso
   }
 }
 
@@ -256,7 +268,7 @@ document.getElementById("exportar-mapeo").addEventListener("click", async () => 
     const a = document.createElement("a");
     const fecha = new Date().toISOString().slice(0, 10);
     a.href = url;
-    a.download = `matesin-mapeo-${fecha}.json`;
+    a.download = `controldoc-mapeo-${fecha}.json`;
     a.click();
     URL.revokeObjectURL(url);
     const nPatrones = (r.patrones_sabana || []).length;
@@ -285,6 +297,32 @@ document.getElementById("importar-mapeo-input").addEventListener("change", async
     mostrar(`Error al importar: ${e.message}`, "err");
   }
   e.target.value = "";
+});
+
+document.getElementById("cf-guardar-baseurl").addEventListener("click", async () => {
+  try {
+    const baseUrl = (cfBaseUrlEl?.value || "").trim();
+    if (!baseUrl) throw new Error("Completá la Base URL de ControlStorage.");
+    const r = await chrome.runtime.sendMessage({ action: "controlfile:setBaseUrl", payload: { baseUrl } });
+    if (!r?.ok) throw new Error(r?.error || "No se pudo guardar la Base URL.");
+    mostrar("ControlStorage Base URL guardada.", "ok");
+  } catch (e) {
+    mostrar(`Error: ${e.message}`, "err");
+  }
+});
+
+document.getElementById("cf-debug-upload").addEventListener("click", async () => {
+  try {
+    if (cfDebugOutputEl) cfDebugOutputEl.value = "";
+    mostrar("Probando subida a ControlStorage...", "");
+    const r = await chrome.runtime.sendMessage({ action: "controlfile:debugUpload" });
+    if (!r?.ok) throw new Error(r?.error || "Falló la subida de debug.");
+    if (cfDebugOutputEl) cfDebugOutputEl.value = JSON.stringify(r.data || {}, null, 2);
+    mostrar("Debug OK: subida remota completada.", "ok");
+  } catch (e) {
+    if (cfDebugOutputEl) cfDebugOutputEl.value = `ERROR\n${e.message}`;
+    mostrar(`Error: ${e.message}`, "err");
+  }
 });
 
 cargarConfig();

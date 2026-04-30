@@ -1,7 +1,7 @@
 /**
- * Clasificación de páginas usando Claude API (visión).
- * Renderiza cada página del PDF con pdf.js y la envía al background
- * (que llama a la API de Anthropic) para obtener el tipo de documento.
+ * Lectura generica de metadata de paginas usando Claude API.
+ * Renderiza cada pagina del PDF con pdf.js y la envia al background
+ * para obtener datos de persona, vehiculo, periodo y texto estable.
  */
 (function () {
   const PDFJS_URL = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
@@ -118,18 +118,18 @@
         fase: "ia",
         pagina: idx,
         totalPaginas: totalAProcesar,
-        mensaje: `Clasificando página ${i} con Claude… (${idx}/${totalAProcesar})`
+        mensaje: `Leyendo pagina ${i} con Claude... (${idx}/${totalAProcesar})`
       });
 
       try {
         const resultado = await enviarMensajeExtension({
-          action: "ai:clasificarPagina",
+          action: "ai:extraerMetadataPagina",
           payload: { base64, mediaType: "image/jpeg" }
         });
         salida.push({
           pagina: i,
-          texto: resultado?.etiqueta || "",
-          id: resultado?.id || "desconocido",
+          texto: resultado?.textoEstable || "",
+          id: resultado?.id || "pagina",
           etiqueta: resultado?.etiqueta || "",
           cuil: resultado?.cuil || "",
           apellido: resultado?.apellido || "",
@@ -142,11 +142,11 @@
         // Si es error de API Key o configuración, relanzar de inmediato — no tiene sentido
         // seguir procesando el resto de las páginas sin Claude.
         if (/api.?key|anthropic|cargala/i.test(e?.message || "")) throw e;
-        console.warn(`[MAU] Error clasificando página ${i}:`, e);
+        console.warn(`[MAU] Error leyendo pagina ${i}:`, e);
         salida.push({
           pagina: i,
           texto: "",
-          id: "desconocido",
+          id: "pagina",
           etiqueta: "",
           cuil: "",
           apellido: "",

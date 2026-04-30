@@ -5,10 +5,9 @@
     nextFilaId: 1,
     ultFilaNuevaId: null,
     ultimaAlerta: { mensaje: "", ts: 0 },
-    sabanaPendiente: null,
-    sabanaContexto: null
+    sabanaPendiente: null
   };
-  // DEBUG: exponer estado para diagnóstico desde consola
+  // DEBUG: exponer estado para diagnostico desde consola
   window.__MAU_DEBUG__ = { estado };
 
   // Set logo src from extension resources
@@ -33,11 +32,10 @@
     procesar: document.getElementById("mau-procesar"),
     pText: document.getElementById("mau-progress-text"),
     pInner: document.getElementById("mau-progress-inner"),
-    // Modo sábana
+    // Modo sabana
     abrirMapeo: document.getElementById("mau-abrir-mapeo"),
     sabanaWrap: document.getElementById("mau-sabana-wrap"),
     sabanaEditor: document.getElementById("mau-sabana-editor"),
-    patronNombre: document.getElementById("mau-patron-nombre"),
     sabanaTablaBody: document.getElementById("mau-sabana-tabla-body"),
     sabanaConfirmar: document.getElementById("mau-sabana-confirmar"),
     sabanaCancelar: document.getElementById("mau-sabana-cancelar"),
@@ -69,7 +67,6 @@
   ui.procesar.addEventListener("click", procesarTodo);
   if (ui.abrirMapeo) ui.abrirMapeo.addEventListener("click", abrirGestorMapeo);
 
-  if (ui.sabanaConfirmar) ui.sabanaConfirmar.addEventListener("click", confirmarPatronSabana);
   if (ui.sabanaCancelar) ui.sabanaCancelar.addEventListener("click", cancelarEditorSabana);
   ui.seleccionar.addEventListener("click", () => ui.fileInput.click());
   ui.fileInput.addEventListener("change", async () => {
@@ -133,7 +130,7 @@
     const textoCompleto = textoPlano(td.textContent);
     if (!textoCompleto) return { textoCompleto: "", apellido: "", nombre: "", cuil: "", contrato: "" };
     // El recurso tiene formato:
-    //   "FERNANDEZ ENRIQUE DARIO Argentina - Empleador: 20209995124 Contrato: Planta RAM"
+    //   "APELLIDO NOMBRE Argentina - Empleador: 20123456789 Contrato: Planta"
     //   Puede tener un <a> con el nombre, o puede ser texto plano.
     const linkRecurso = td.querySelector("a");
     let nombreCompleto = linkRecurso ? textoPlano(linkRecurso.textContent) : "";
@@ -143,7 +140,7 @@
       // Usar innerText para respetar saltos de línea del DOM.
       const lineas = (td.innerText || "").split(/\n/).map((l) => l.trim()).filter(Boolean);
       if (lineas.length > 0) {
-        // La primera línea suele ser el nombre (ej: "FERNANDEZ ENRIQUE DARIO")
+        // La primera linea suele ser el nombre (ej: "APELLIDO NOMBRE")
         const primeraLinea = lineas[0];
         // Verificar que parece un nombre (2+ palabras, mayúsculas o tipo título; no "Argentina"/"Empleador"/"Contrato")
         if (
@@ -161,7 +158,7 @@
     const contratoMatch = textoCompleto.match(/Contrato[:\s]*(.+)/i);
     const contrato = contratoMatch ? contratoMatch[1].trim() : "";
     // Usar el nombre completo como apellido para poder desambiguar entre
-    // "FERNANDEZ DIEGO ARIEL" y "FERNANDEZ ENRIQUE DARIO" correctamente.
+    // dos personas con el mismo apellido correctamente.
     let apellido = "";
     let nombre = "";
     if (nombreCompleto) {
@@ -516,62 +513,7 @@
       if (numPag > 1) {
         estado.sabanaPendiente = archivo;
         mostrarSeccionSabana(true);
-        console.log("[MAU] PDF candidato a sábana (>4 páginas). Intentando reconocer patrón...", archivo.name);
-        // Intento de auto-aplicar patrón aprendido sin abrir modal
-        try {
-          const patrones = (await window.MAUStorage.leerPatronesSabana()) || [];
-          // DEBUG: mostrar patrones guardados para diagnóstico
-          console.log(`[MAU][PATRONES] Patrones guardados: ${patrones.length}`);
-          patrones.forEach((p, idx) => {
-            console.log(`[MAU][PATRONES]   [${idx}] nombre="${p.nombre}" firmaTipos=[${(p.firmaTipos||[]).join(',')}]`);
-            (p.bloquesModal || []).forEach((b, bi) => {
-              console.log(`[MAU][PATRONES]     bloque[${bi}]: nombre="${b.nombre}" pags=[${(b.paginas||[]).join(',')}] reqs=[${(b.requerimientos||[]).join(' | ')}]`);
-            });
-          });
-          if (patrones.length && window.MAUOcrEngine?.extraerTextoPorPagina) {
-            if (!estado.requerimientos.length) await detectarRequerimientosPendientes();
-            console.log("[MAU] Analizando texto de", patrones.length, "patrón(es) guardados...");
-            const textos = await window.MAUOcrEngine.extraerTextoPorPagina(archivo, () => {});
-            const firmaTipos = textos.map((t) => t.etiqueta || "desconocido");
-            console.log("[MAU] Firma detectada:", firmaTipos.join(" | "));
-            // Similitud multiset: fracción de tipos que coinciden (tolera páginas mal clasificadas)
-            const similitudMultiset = (a, b) => {
-              if (!Array.isArray(a) || !Array.isArray(b)) return 0;
-              if (a.length !== b.length) return 0;
-              const contB = {};
-              for (const x of b) contB[x] = (contB[x] || 0) + 1;
-              let matches = 0;
-              for (const x of a) { if (contB[x] > 0) { matches++; contB[x]--; } }
-              return matches / a.length;
-            };
-            // Buscar primero match exacto, luego match aproximado (≥70% tipos coinciden)
-            const candidatos = patrones.filter(
-              (p) => Array.isArray(p.firmaTipos) && Array.isArray(p.bloquesModal) && p.bloquesModal.length
-            );
-            const match = candidatos.find((p) => similitudMultiset(p.firmaTipos, firmaTipos) === 1) ||
-                          candidatos.map((p) => ({ p, s: similitudMultiset(p.firmaTipos, firmaTipos) }))
-                                    .filter((x) => x.s >= 0.70)
-                                    .sort((a, b) => b.s - a.s)[0]?.p || null;
-            if (match) {
-              const sim = similitudMultiset(match.firmaTipos, firmaTipos);
-              const esExacto = sim === 1;
-              console.log(`[MAU] ✓ Patrón reconocido («${match.nombre}», similitud ${Math.round(sim * 100)}%). Aplicando…`);
-              mostrarToast(`Patrón «${match.nombre}» reconocido${esExacto ? "" : ` (~${Math.round(sim * 100)}% match)`} y aplicado.`);
-              // Remapear usando tipo primero y nombre/CUIL para desempatar bloques del mismo tipo.
-              const bloquesRemapeados = remapearBloquesPorTexto(match.bloquesModal, textos, match.firmaTipos);
-              console.log("[MAU] Bloques remapeados (por nombre+tipo):", bloquesRemapeados);
-              await aplicarBloquesModal(archivo, bloquesRemapeados);
-              continue;
-            } else {
-              console.log("[MAU] No hay patrón guardado que coincida con esta firma. Usá «Dividir manual con miniaturas».");
-            }
-          } else {
-            console.log("[MAU] No hay patrones guardados todavía. Usá «Dividir manual con miniaturas».");
-          }
-        } catch (err) {
-          console.warn("[MAU] Error al intentar auto-aplicar patrón:", err);
-        }
-        continue;
+        console.log("[MAU] PDF sábana pendiente:", archivo.name);
       }
       // PDF de 1 página en modo sábana → ignorar (no aplica)
     }
@@ -782,45 +724,6 @@
     });
   }
 
-  function construirFirma(bloques, textosPorPagina) {
-    return bloques.map((b) => {
-      const row = textosPorPagina.find((x) => x.pagina === b.desde);
-      const raw = row?.texto || "";
-      return window.MAUStorage.normalizar(raw).slice(0, 50);
-    });
-  }
-
-  function similitudFirmas(f1, f2) {
-    if (!f1?.length || f1.length !== f2.length) return 0;
-    let s = 0;
-    for (let i = 0; i < f1.length; i++) {
-      const a = f1[i];
-      const b = f2[i];
-      const sim = window.MAUMatcher.similitudSimple(a, b);
-      const pref = 12;
-      const pa = a.slice(0, pref);
-      const pb = b.slice(0, pref);
-      const overlap = pa.length && pb.length && (a.includes(pb) || b.includes(pa));
-      s += Math.max(sim, overlap ? 0.65 : 0);
-    }
-    return s / f1.length;
-  }
-
-  function buscarPatronSimilar(firmaNueva, patrones, umbral = 0.55) {
-    let mejor = null;
-    let mejorScore = 0;
-    for (const p of patrones || []) {
-      if (!p.firma || p.firma.length !== firmaNueva.length) continue;
-      const sc = similitudFirmas(firmaNueva, p.firma);
-      if (sc > mejorScore) {
-        mejorScore = sc;
-        mejor = p;
-      }
-    }
-    if (mejor && mejorScore >= umbral) return { ...mejor, score: mejorScore };
-    return null;
-  }
-
   /**
    * Incorpora archivos resultantes del split de sábana.
    * @param {Array<File>} files - Archivos PDF resultantes del split.
@@ -844,186 +747,20 @@
     renderTabla();
   }
 
-  function renderTablaEditorSabana(bloques) {
-    if (!ui.sabanaTablaBody) return;
-    ui.sabanaTablaBody.innerHTML = "";
-    for (const b of bloques) {
-      const tr = document.createElement("tr");
-      const tdN = document.createElement("td");
-      const tdD = document.createElement("td");
-      const tdH = document.createElement("td");
-      const inN = document.createElement("input");
-      inN.type = "text";
-      inN.className = "mau-input mau-sab-nombre";
-      inN.value = b.nombre || "Bloque";
-      const inD = document.createElement("input");
-      inD.type = "number";
-      inD.className = "mau-input mau-sab-desde";
-      inD.min = "1";
-      inD.value = String(b.desde);
-      const inH = document.createElement("input");
-      inH.type = "number";
-      inH.className = "mau-input mau-sab-hasta";
-      inH.min = "1";
-      inH.value = String(b.hasta);
-      tdN.appendChild(inN);
-      tdD.appendChild(inD);
-      tdH.appendChild(inH);
-      tr.appendChild(tdN);
-      tr.appendChild(tdD);
-      tr.appendChild(tdH);
-      ui.sabanaTablaBody.appendChild(tr);
-    }
-  }
-
-  function leerBloquesDesdeEditor() {
-    const filas = ui.sabanaTablaBody?.querySelectorAll("tr") || [];
-    const bloques = [];
-    filas.forEach((tr) => {
-      const nombre = tr.querySelector(".mau-sab-nombre")?.value?.trim() || "Bloque";
-      const desde = parseInt(tr.querySelector(".mau-sab-desde")?.value, 10);
-      const hasta = parseInt(tr.querySelector(".mau-sab-hasta")?.value, 10);
-      if (!Number.isFinite(desde) || !Number.isFinite(hasta) || desde < 1 || hasta < desde) {
-        throw new Error("Rangos desde/hasta inválidos en la tabla de bloques.");
-      }
-      bloques.push({ nombre, desde, hasta });
-    });
-    return bloques;
-  }
-
   function resetSabanaUi() {
     estado.sabanaPendiente = null;
-    estado.sabanaContexto = null;
     if (ui.sabanaWrap) ui.sabanaWrap.hidden = true;
-    if (ui.sabanaEditor) ui.sabanaEditor.hidden = true;
-    if (ui.patronNombre) ui.patronNombre.value = "";
     if (ui.sabanaTablaBody) ui.sabanaTablaBody.innerHTML = "";
     actualizarProgreso(0, 0, "Sin procesamiento en curso");
   }
 
   function cancelarEditorSabana() {
-    if (ui.sabanaEditor) ui.sabanaEditor.hidden = true;
-    estado.sabanaContexto = null;
     ui.pText.textContent = "Sin procesamiento en curso";
-  }
-
-  async function ejecutarFlujoOcrSabana() {
-    const file = estado.sabanaPendiente;
-    if (!file) {
-      console.warn("[MAU] No hay PDF pendiente para OCR.");
-      return;
-    }
-    // Preguntar antes de dividir: ¿son varios docs o es uno solo?
-    const dividir = await preguntarSiNo({
-      titulo: "¿Este PDF tiene varios documentos?",
-      mensaje:
-        `"${file.name}" — Si es un solo documento, la IA igual lo lee ` +
-        `para identificarlo (apellido, CUIL, tipo), pero no lo divide en partes.`,
-      labelSi: "Sí, dividir en varios",
-      labelNo: "No, es un solo documento"
-    });
-    if (!dividir) {
-      await tratarComoDocumentoUnico(file);
-      resetSabanaUi();
-      return;
-    }
-    const btn = ui.ocrDividir;
-    if (btn) btn.disabled = true;
-    try {
-      if (!estado.requerimientos.length) await detectarRequerimientosPendientes();
-      const patrones = await window.MAUStorage.leerPatronesSabana();
-      ui.pText.textContent = "Cargando OCR…";
-
-      const textos = await window.MAUOcrEngine.extraerTextoPorPagina(file, (info) => {
-        if (info.pagina != null && info.totalPaginas != null) {
-          const pct = Math.round((info.pagina / info.totalPaginas) * 100);
-          actualizarProgreso(info.pagina, info.totalPaginas, info.mensaje || `OCR página ${info.pagina} de ${info.totalPaginas}`);
-          ui.pInner.style.width = `${pct}%`;
-        } else if (info.mensaje) {
-          ui.pText.textContent = info.mensaje;
-        }
-      });
-
-      const bloques = window.MAUPdfSplitter.detectarBloques(textos, null);
-      const firma = construirFirma(bloques, textos);
-      const match = buscarPatronSimilar(firma, patrones, 0.55);
-
-      const muchasPaginas = textos.length > 8;
-      const pocosBloques = bloques.length < 2;
-      const requiereRevisionUsuario = pocosBloques && muchasPaginas;
-
-      if (match && !requiereRevisionUsuario) {
-        console.log("[MAU] Patrón automático:", match.nombre, "score", match.score);
-        mostrarToast(`Patrón «${match.nombre}» aplicado automáticamente`);
-        const files = await window.MAUPdfSplitter.dividirPdfPorRangos(file, match.bloques);
-        // Extraer metadata OCR de cada bloque para matchear contra Recurso.
-        const bloquesMetadata = (match.bloques || bloques || []).map((b) => ({
-          apellido: b.apellido || "",
-          nombre: b.nombreEmp || b.nombre || "",
-          cuil: b.cuil || "",
-          patente: b.patente || "",
-          periodo: b.periodo || ""
-        }));
-        await incorporarArchivosPostSplit(files, bloquesMetadata);
-        resetSabanaUi();
-        return;
-      }
-
-      estado.sabanaContexto = { file, textosPorPagina: textos, bloques, firma };
-      renderTablaEditorSabana(bloques);
-      if (ui.patronNombre) {
-        ui.patronNombre.value = requiereRevisionUsuario && match?.nombre ? match.nombre : "";
-      }
-      if (ui.sabanaEditor) ui.sabanaEditor.hidden = false;
-      if (requiereRevisionUsuario && match) {
-        mostrarToast("Pocos bloques detectados: revisá rangos y confirmá el patrón.");
-      }
-      ui.pText.textContent = "Revisá bloques y nombre del patrón, luego confirmá.";
-    } catch (e) {
-      alertarErrorOcr(e);
-      ui.pText.textContent = `Error: ${e.message || e}`;
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  }
-
-  async function confirmarPatronSabana() {
-    const ctx = estado.sabanaContexto;
-    if (!ctx?.file) return;
-    const nombrePatron = ui.patronNombre?.value?.trim();
-    if (!nombrePatron) {
-      ui.pText.textContent = "Escribí un nombre de patrón (ej. Lista A).";
-      return;
-    }
-    try {
-      const bloques = leerBloquesDesdeEditor();
-      const firma = construirFirma(bloques, ctx.textosPorPagina);
-      await window.MAUStorage.guardarPatronSabana({ nombre: nombrePatron, bloques, firma });
-      const files = await window.MAUPdfSplitter.dividirPdfPorRangos(ctx.file, bloques);
-      // Pasar metadata OCR de los bloques originales del contexto.
-      const bloquesOCR = ctx.bloques || [];
-      const bloquesMetadata = bloques.map((b, i) => {
-        const ocrBloque = bloquesOCR[i] || {};
-        return {
-          apellido: ocrBloque.apellido || "",
-          nombre: ocrBloque.nombreEmp || ocrBloque.nombre || "",
-          cuil: ocrBloque.cuil || "",
-          patente: ocrBloque.patente || "",
-          periodo: ocrBloque.periodo || ""
-        };
-      });
-      await incorporarArchivosPostSplit(files, bloquesMetadata);
-      mostrarToast(`Patrón «${nombrePatron}» guardado y archivos generados.`);
-      resetSabanaUi();
-    } catch (e) {
-      console.error(e);
-      ui.pText.textContent = e.message || String(e);
-    }
   }
 
   /**
    * Asigna un archivo a un requerimiento. Si hay metadata, elige la fila cuyo Recurso
-   * coincida (para no poner el recibo de FERNANDEZ en la fila de GONZALEZ).
+   * coincida con la persona o vehiculo correcto cuando hay filas similares.
    * Si no hay metadata o no hay match por recurso, asigna a la primera fila disponible sin archivo.
    *
    * @param {string} nombreReq - Nombre del requerimiento.
@@ -1115,8 +852,8 @@
       console.log(`[MAU][ASIGNAR] Única fila → id=${filaDestino.id}`);
     } else if (!filaDestino && metadata && (metadata.apellido || metadata.nombre)) {
       // Múltiples filas con mismo nombre → usar metadata para elegir la correcta.
-      // Construir nombre completo: apellido + nombre (ej: "FERNANDEZ DIEGO ARIEL")
-      // para distinguir entre "FERNANDEZ ENRIQUE DARIO" y "FERNANDEZ DIEGO ARIEL".
+  // Construir nombre completo: apellido + nombre para distinguir personas
+  // con el mismo apellido.
       const metaNombreCompleto = [metadata.apellido, metadata.nombre].filter(Boolean).join(" ").toLowerCase();
       const metaApellido = metaNombreCompleto || (metadata.apellido || "").toLowerCase();
       console.log(`[MAU][ASIGNAR] Buscando por metadata: nombre="${metaApellido}"`);
@@ -2343,156 +2080,6 @@
     throw new Error("Timeout esperando que cargue el popup del requerimiento.");
   }
 
-  function buscarMejorPatron(patrones, firmaTipos, textos) {
-    const normStr = (s) =>
-      (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
-
-    const multisetIgual = (a, b) => {
-      if (a.length !== b.length) return false;
-      const sa = [...a].sort();
-      const sb = [...b].sort();
-      return sa.every((v, i) => v === sb[i]);
-    };
-
-    const puntuar = (patron) => {
-      if (!Array.isArray(patron.bloquesModal) || !patron.bloquesModal.length) return -1;
-
-      const tiposGuardados = Array.isArray(patron.firmaTipos) ? patron.firmaTipos : [];
-      if (tiposGuardados.length > 0) {
-        // Patrón creado con Claude: comparar tipos en cualquier orden
-        if (!multisetIgual(tiposGuardados, firmaTipos)) return -1;
-      } else {
-        // Patrón creado sin Claude: comparar por cantidad de páginas
-        const totalGuardado = patron.totalPaginas ||
-          Math.max(0, ...(patron.bloquesModal.flatMap((b) => b.paginas || []).concat([0])));
-        if (totalGuardado > 0 && totalGuardado !== firmaTipos.length) return -1;
-      }
-
-      // Desambiguación por texto: palabras del OCR que aparecen en el patrón
-      const textoDocumento = textos
-        .map((t) => [t.textoEstable, t.apellido, t.nombre, t.cuil].filter(Boolean).join(" "))
-        .join(" ");
-      const wordsDoc = new Set(normStr(textoDocumento).split(/\s+/).filter((w) => w.length > 2));
-
-      const textoPatron = patron.bloquesModal
-        .flatMap((b) => [b.nombre, ...(b.requerimientos || [])])
-        .join(" ");
-      const wordsPatron = normStr(textoPatron).split(/\s+/).filter((w) => w.length > 2);
-
-      return wordsPatron.filter((w) => wordsDoc.has(w)).length;
-    };
-
-    const candidatos = patrones
-      .map((p) => ({ patron: p, score: puntuar(p) }))
-      .filter((x) => x.score >= 0)
-      .sort((a, b) => b.score - a.score);
-
-    return candidatos[0]?.patron || null;
-  }
-
-  function remapearBloquesPorTexto(bloquesPatron, textos, firmaTiposPatron) {
-    const normStr = (s) =>
-      (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
-
-    // Construir los tipos esperados por bloque a partir del patrón original
-    // firmaTiposPatron[i] = etiqueta de la página (i+1) en el patrón guardado
-    const bloquesConTipos = bloquesPatron.map((b) => {
-      const tiposEsperados = (b.paginas || []).map((p) => (firmaTiposPatron ? firmaTiposPatron[p - 1] : null) || "desconocido");
-      return { ...b, tiposEsperados };
-    });
-
-    // Pool de páginas disponibles del PDF actual
-    const disponibles = textos.map((t) => ({ ...t, usada: false }));
-
-    const nuevasPaginas = bloquesConTipos.map(() => []);
-
-    for (let bi = 0; bi < bloquesConTipos.length; bi++) {
-      const b = bloquesConTipos[bi];
-      const apellidoBloque = normStr(b.meta?.apellido || "");
-      const cuilBloque = normStr(b.meta?.cuil || "").replace(/[^0-9]/g, "");
-
-      for (const tipoEsperado of b.tiposEsperados) {
-        // Candidatos: misma etiqueta o mismo id, no usados
-        const candidatos = disponibles.filter(
-          (d) => !d.usada && (d.etiqueta === tipoEsperado || d.id === tipoEsperado || normStr(d.etiqueta) === normStr(tipoEsperado))
-        );
-        if (!candidatos.length) continue;
-
-        if (candidatos.length === 1) {
-          // Único candidato con ese tipo → asignar directo
-          candidatos[0].usada = true;
-          nuevasPaginas[bi].push(candidatos[0].pagina);
-        } else {
-          // Varios candidatos del mismo tipo → usar nombre/CUIL para desempatar
-          const scored = candidatos.map((c) => {
-            let score = 0;
-            const cuilPag = normStr(c.cuil || "").replace(/[^0-9]/g, "");
-            const apellidoPag = normStr(c.apellido || "");
-            const nombrePag = normStr(c.nombre || "");
-            const textoPag = normStr([c.textoEstable, c.apellido, c.nombre].join(" "));
-            if (cuilBloque && cuilPag && cuilPag === cuilBloque) score += 10;
-            if (apellidoBloque && apellidoPag && apellidoPag.includes(apellidoBloque)) score += 5;
-            if (apellidoBloque && textoPag.includes(apellidoBloque)) score += 2;
-            return { c, score };
-          });
-          scored.sort((a, b) => b.score - a.score);
-          scored[0].c.usada = true;
-          nuevasPaginas[bi].push(scored[0].c.pagina);
-        }
-      }
-    }
-
-    // Fallback: si algún bloque quedó vacío, usar sus páginas originales del patrón
-    return bloquesConTipos.map((b, bi) => ({
-      ...b,
-      paginas: nuevasPaginas[bi].length ? nuevasPaginas[bi].sort((a, c) => a - c) : b.paginas
-    }));
-  }
-
-  async function analizarSabana() {
-    const file = estado.sabanaPendiente;
-    if (!file) {
-      mostrarToast("Primero soltá o seleccioná un PDF sábana.");
-      return;
-    }
-    const btn = ui.modalDividir;
-    if (btn) btn.disabled = true;
-    try {
-      if (!estado.requerimientos.length) await detectarRequerimientosPendientes();
-
-      ui.pText.textContent = "Analizando páginas con Claude…";
-      const textos = await window.MAUOcrEngine.extraerTextoPorPagina(file, (info) => {
-        if (info.pagina != null && info.totalPaginas != null) {
-          const pct = Math.round((info.pagina / info.totalPaginas) * 100);
-          actualizarProgreso(info.pagina, info.totalPaginas, info.mensaje || `Analizando página ${info.pagina}/${info.totalPaginas}`);
-          ui.pInner.style.width = `${pct}%`;
-        } else if (info.mensaje) {
-          ui.pText.textContent = info.mensaje;
-        }
-      });
-
-      const firmaTipos = textos.map((t) => t.etiqueta || "desconocido");
-      const patrones = (await window.MAUStorage.leerPatronesSabana()) || [];
-      const match = buscarMejorPatron(patrones, firmaTipos, textos);
-
-      if (match) {
-        // Reasignar páginas usando tipo primero y nombre/CUIL para desempatar.
-        const bloquesRemapeados = remapearBloquesPorTexto(match.bloquesModal, textos, match.firmaTipos);
-        mostrarToast(`Patrón «${match.nombre}» encontrado. Aplicando…`);
-        ui.pText.textContent = `Patrón «${match.nombre}» aplicado automáticamente.`;
-        await aplicarBloquesModal(file, bloquesRemapeados);
-      } else {
-        mostrarToast("No se encontró un patrón para esta sábana. Usá 'Crear / Ajustar mapeo' primero.");
-        ui.pText.textContent = "Sin patrón guardado para esta sábana. Creá uno con 'Crear / Ajustar mapeo'.";
-      }
-    } catch (e) {
-      console.error("[MAU] Error al analizar sábana:", e);
-      ui.pText.textContent = `Error: ${e.message || e}`;
-    } finally {
-      if (btn) btn.disabled = false;
-    }
-  }
-
   function normalizarEntidadClave(s) {
     return window.MAUStorage.normalizar(String(s || "")).replace(/\s+/g, " ").trim();
   }
@@ -2773,11 +2360,9 @@ function expandirRequerimientosPorDestino(requerimientosBase, destino, meta) {
       bloquesIniciales,
       nombrePatron: patronElegido?.nombre || "",
       onConfirm: async (bloques, numPaginas) => {
-        // Claude es obligatorio: lee TODAS las páginas para:
-        // 1. Saber de quién es el documento (apellido, CUIL, patente) → meta de cada bloque
-        // 2. Guardar el tipo de cada página → firmaTipos completo para el modo Trabajar
-        // IMPORTANTE: no usar paginasEspecificas aquí porque las páginas NO asignadas a bloques
-        // (ej: recibos de haberes) también necesitan su tipo guardado en firmaTipos.
+        // Claude lee todas las paginas solo para extraer metadata generica
+        // (persona, CUIL, patente, periodo y texto estable). El matching de
+        // trabajo se hace por imagen contra el mapeo guardado.
         let textosPorPagina = [];
         try {
           ui.pText.textContent = "Leyendo contenido de las páginas con Claude…";
@@ -2789,7 +2374,7 @@ function expandirRequerimientosPorDestino(requerimientosBase, destino, meta) {
                 ui.pInner.style.width = `${Math.round((info.pagina / info.totalPaginas) * 100)}%`;
               }
             }
-            // Sin paginasEspecificas → clasifica TODAS las páginas
+            // Sin paginasEspecificas: lee todas las paginas para metadata.
           );
         } catch (e) {
           alertarErrorOcr(e);
@@ -2815,16 +2400,9 @@ function expandirRequerimientosPorDestino(requerimientosBase, destino, meta) {
           };
         });
 
-        // Firma de tipos (clasificación por página)
-        const firmaTiposNueva = Array.from({ length: numPaginas || 0 }, (_, i) => {
-          const t = textosPorPagina.find((x) => x.pagina === i + 1);
-          return t?.etiqueta || "desconocido";
-        });
-
         try {
           await window.MAUStorage.guardarPatronSabana({
             nombre: nombreBase,
-            firmaTipos: firmaTiposNueva,
             totalPaginas: numPaginas || 0,
             bloquesModal: bloquesConTexto
           });
@@ -2886,4 +2464,3 @@ function expandirRequerimientosPorDestino(requerimientosBase, destino, meta) {
     renderTabla
   };
 })();
-

@@ -1,4 +1,4 @@
-# Matesin Auto-Upload (Chrome)
+# Control Documentario (Chrome)
 
 Esta carpeta ya viene lista para cargar como extensión de Chrome.
 
@@ -9,13 +9,13 @@ Esta carpeta ya viene lista para cargar como extensión de Chrome.
 3. En la barra de direcciones escribí: `chrome://extensions` y apretá Enter.
 4. Activá el interruptor **Modo desarrollador** (arriba a la derecha).
 5. Hacé click en **Cargar descomprimida**.
-6. Seleccioná esta carpeta: `matesin-auto-upload`.
+6. Seleccioná esta carpeta: `control-documentario`.
 7. Listo: vas a ver el ícono de la extensión en Chrome.
 
 ## Cómo usarla en controldocumentario.com
 
 1. Entrá a `https://controldocumentario.com/Bandeja.aspx?menu=1`.
-2. Vas a ver un panel a la derecha llamado **Matesin Auto-Upload**.
+2. Vas a ver un panel a la derecha llamado **Control Documentario**.
 3. Hacé click en **Detectar requerimientos pendientes**.
 4. Arrastrá tus PDFs al área de carga.
 5. Revisá la tabla de asignaciones.
@@ -25,7 +25,7 @@ Esta carpeta ya viene lista para cargar como extensión de Chrome.
 ## Opciones
 
 - Para borrar el aprendizaje de mapeos:
-  - En `chrome://extensions`, buscá **Matesin Auto-Upload**.
+  - En `chrome://extensions`, buscá **Control Documentario**.
   - Entrá a **Detalles** > **Opciones de extensión**.
   - Hacé click en **Limpiar memoria**.
 
