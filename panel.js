@@ -6,7 +6,7 @@
     ultFilaNuevaId: null,
     ultimaAlerta: { mensaje: "", ts: 0 }
   };
-  // DEBUG: exponer estado para diagnostico desde consola
+  // DEBUG: exponer. estado para diagnostico desde consola
   window.__MAU_DEBUG__ = { estado };
 
   const logoEl = document.getElementById("mau-logo");
@@ -605,7 +605,7 @@
       overlay.appendChild(box);
       document.body.appendChild(overlay);
       const cerrar = (val) => {
-        try { overlay.remove(); } catch (e) {}
+        try { overlay.remove(); } catch (e) { }
         resolve(val);
       };
       btnSi.addEventListener("click", () => cerrar(true));
@@ -669,13 +669,13 @@
           btn.style.background = "linear-gradient(135deg, #38bdf8, #818cf8)";
           btn.style.color = "#fff";
         }
-        btn.addEventListener("click", () => { try { overlay.remove(); } catch (e) {} resolve(op.id); });
+        btn.addEventListener("click", () => { try { overlay.remove(); } catch (e) { } resolve(op.id); });
         actions.appendChild(btn);
       }
       box.appendChild(actions);
       overlay.appendChild(box);
       document.body.appendChild(overlay);
-      overlay.addEventListener("click", (e) => { if (e.target === overlay) { try { overlay.remove(); } catch (e2) {} resolve(null); } });
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) { try { overlay.remove(); } catch (e2) { } resolve(null); } });
     });
   }
 
@@ -735,7 +735,7 @@
       box.appendChild(actions);
       overlay.appendChild(box);
       document.body.appendChild(overlay);
-      const cerrar = (val) => { try { overlay.remove(); } catch (e) {} resolve(val); };
+      const cerrar = (val) => { try { overlay.remove(); } catch (e) { } resolve(val); };
       btnOk.addEventListener("click", () => {
         if (!sel.value) { mostrarToast("Elegí un requerimiento primero."); return; }
         const opt = sel.options[sel.selectedIndex];
@@ -863,8 +863,8 @@
       console.log(`[MAU][ASIGNAR] Única fila → id=${filaDestino.id}`);
     } else if (!filaDestino && metadata && (metadata.apellido || metadata.nombre)) {
       // Múltiples filas con mismo nombre → usar metadata para elegir la correcta.
-  // Construir nombre completo: apellido + nombre para distinguir personas
-  // con el mismo apellido.
+      // Construir nombre completo: apellido + nombre para distinguir personas
+      // con el mismo apellido.
       const metaNombreCompleto = [metadata.apellido, metadata.nombre].filter(Boolean).join(" ").toLowerCase();
       const metaApellido = metaNombreCompleto || (metadata.apellido || "").toLowerCase();
       console.log(`[MAU][ASIGNAR] Buscando por metadata: nombre="${metaApellido}"`);
@@ -902,7 +902,7 @@
 
     // Patente: buscar requerimientos de automotor/técnico.
     const patente = (archivo.name || "").match(/\b[a-z]{2,3}\d{3}\b/i)?.[0] ||
-                    (metadata?.patente || "");
+      (metadata?.patente || "");
     if (patente) {
       const normPat = patente.toLowerCase();
       const auto = estado.filas.find((f) =>
@@ -1077,7 +1077,7 @@
           ui.pText.textContent = `Leyendo ${archivo.name} con IA (1 página)…`;
           console.log("[MAU] OCR: analizando primera página del PDF 'documento único':", archivo.name);
           // Solo 1 página: ahorro de API.
-          const textos = await window.MAUOcrEngine.extraerTextoPorPagina(archivo, () => {}, { maxPaginas: 1 });
+          const textos = await window.MAUOcrEngine.extraerTextoPorPagina(archivo, () => { }, { maxPaginas: 1 });
           if (textos.length > 0) {
             const t = textos[0];
             metaOcr = {
@@ -1237,7 +1237,7 @@
     }
     const tr = link.closest("tr");
     const destino = tr || link;
-    try { destino.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) {}
+    try { destino.scrollIntoView({ behavior: "smooth", block: "center" }); } catch (e) { }
     // Resaltar visualmente la fila original por unos segundos.
     if (tr) {
       const estiloPrevio = tr.style.cssText;
@@ -1401,7 +1401,7 @@
           const docPop = iframe?.contentDocument || iframe?.contentWindow?.document;
           if (!docPop) { console.warn("[MAU] No abrió el popup."); await cerrarFancyboxAbierto(); continue; }
           // Inyectar parche confirm en todos los iframes accesibles
-          try { await inyectarParcheConfirmEnArbolAccesible(); } catch (e) {}
+          try { await inyectarParcheConfirmEnArbolAccesible(); } catch (e) { }
           await dormir(1000);
           // Buscar el botón Enviar (exacto, en el iframe)
           const docs = [];
@@ -1430,7 +1430,7 @@
           await dormir(2000);
         } catch (e) {
           console.warn("[MAU] Error cerrando borrador", nombre, e);
-          try { await cerrarFancyboxAbierto(); } catch {}
+          try { await cerrarFancyboxAbierto(); } catch { }
         }
       }
     }
@@ -1495,7 +1495,7 @@
         const nombreLink = textoPlano(link.textContent || "");
         const quitarPer = (s) => (s || "").replace(/-\d{4}-\d+.*$/i, "").trim();
         const linkBase = quitarPer(nombreLink);
-        const reqBase  = quitarPer(nombreReq);
+        const reqBase = quitarPer(nombreReq);
         const coincideNombre = nombreLink === nombreReq
           || nombreLink.startsWith(nombreReq) || nombreReq.startsWith(nombreLink)
           || linkBase === reqBase;
@@ -1535,7 +1535,7 @@
           const t = (b.textContent || b.value || "").trim().toLowerCase();
           return /^(aceptar|ok|cerrar|continuar)$/.test(t);
         });
-        botonesAceptar.forEach((b) => { try { b.click(); } catch (e) {} });
+        botonesAceptar.forEach((b) => { try { b.click(); } catch (e) { } });
 
         // 2) Apretar "Volver" en cualquier iframe anidado (cierra el popup tras envío exitoso)
         try {
@@ -1546,13 +1546,13 @@
             ).find((el) => /^volver$/i.test((el.textContent || el.value || "").trim()));
             if (volver) { volver.click(); break; }
           }
-        } catch (e) {}
+        } catch (e) { }
 
         // 3) Intentar cerrar fancybox con el botón propio
         const cierres = document.querySelectorAll(
           ".fancybox-close, .fancybox-item.fancybox-close, a.fancybox-close"
         );
-        cierres.forEach((b) => { try { b.click(); } catch (e) {} });
+        cierres.forEach((b) => { try { b.click(); } catch (e) { } });
 
         // 3) Chequear estado "limpio": sin fancybox, sin overlay blockUI, sin ui-dialog visible
         const hayFancybox = !!document.querySelector("iframe.fancybox-iframe, .fancybox-overlay:not([style*='display: none'])");
@@ -1782,7 +1782,7 @@
         // Click insistente: hasta 3 intentos con verificación de cambio.
         for (let intento = 1; intento <= maxIntentos; intento++) {
           console.log(`[MAU] Botón final clickeado (intento ${intento}):`, texto);
-          try { candidato.click(); } catch (e) {}
+          try { candidato.click(); } catch (e) { }
           // Esperamos a que algo cambie en pantalla: el botón desaparece, el popup cambia, etc.
           const cambio = await esperarCambioPostEnviar(candidato, 3500);
           if (cambio) {
@@ -2167,7 +2167,7 @@
     return false;
   }
 
-function expandirRequerimientosPorDestino(requerimientosBase, destino, meta) {
+  function expandirRequerimientosPorDestino(requerimientosBase, destino, meta) {
     const base = Array.isArray(requerimientosBase) ? [...requerimientosBase] : [];
     if (!base.length) return base;
     const salida = [];
