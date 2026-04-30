@@ -46,19 +46,19 @@
     try {
       const r = await chrome.runtime.sendMessage({ action: "firebase:status" });
       const loggedIn = !!(r?.ok && r.data?.user);
-      ui.loginScreen.hidden = loggedIn;
-      ui.modoTrabajar.hidden = !loggedIn;
+      if (ui.loginScreen) ui.loginScreen.hidden = loggedIn;
+      if (ui.modoTrabajar) ui.modoTrabajar.hidden = !loggedIn;
     } catch (_) {
-      ui.loginScreen.hidden = false;
-      ui.modoTrabajar.hidden = true;
+      if (ui.loginScreen) ui.loginScreen.hidden = false;
+      if (ui.modoTrabajar) ui.modoTrabajar.hidden = true;
     }
   }
 
   if (ui.loginBtn) ui.loginBtn.addEventListener("click", async () => {
     const email = ui.loginEmail.value.trim();
     const pass = ui.loginPass.value;
-    ui.loginError.textContent = "";
-    if (!email || !pass) { ui.loginError.textContent = "Completá email y contraseña."; return; }
+    if (ui.loginError) ui.loginError.textContent = "";
+    if (!email || !pass) { if (ui.loginError) ui.loginError.textContent = "Completá email y contraseña."; return; }
     ui.loginBtn.disabled = true;
     ui.loginBtn.textContent = "Ingresando…";
     try {
@@ -67,7 +67,7 @@
       ui.loginScreen.hidden = true;
       ui.modoTrabajar.hidden = false;
     } catch (e) {
-      ui.loginError.textContent = e.message;
+      if (ui.loginError) ui.loginError.textContent = e.message;
     } finally {
       ui.loginBtn.disabled = false;
       ui.loginBtn.textContent = "Ingresar";
@@ -75,17 +75,19 @@
   });
 
   if (ui.loginGoogleBtn) ui.loginGoogleBtn.addEventListener("click", async () => {
-    ui.loginError.textContent = "";
+    if (ui.loginError) ui.loginError.textContent = "";
     ui.loginGoogleBtn.disabled = true;
+    ui.loginGoogleBtn.textContent = "Ingresando…";
     try {
       const r = await chrome.runtime.sendMessage({ action: "firebase:loginGoogle" });
       if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesión con Google.");
       ui.loginScreen.hidden = true;
       ui.modoTrabajar.hidden = false;
     } catch (e) {
-      ui.loginError.textContent = e.message;
+      if (ui.loginError) ui.loginError.textContent = e.message;
     } finally {
       ui.loginGoogleBtn.disabled = false;
+      ui.loginGoogleBtn.textContent = "Ingresar con Google";
     }
   });
 
