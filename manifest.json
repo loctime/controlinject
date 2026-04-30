@@ -84,6 +84,8 @@
         "mapeos.js",
         "options.html",
         "options.js",
+        "pdf.min.js",
+        "pdf.worker.min.js",
         "icons/*"
       ],
       "matches": [

@@ -631,11 +631,17 @@ async function manejarMensaje(mensaje) {
     return { cleared: true };
   }
 
+  if (accion === "mapeos:getTabCD") {
+    const { tabId } = await tgConseguirTabControldoc();
+    return { tabId };
+  }
+
   if (accion === "mapeos:renderThumbnails") {
     const base64 = mensaje?.payload?.base64;
-    const escala = parseFloat(mensaje?.payload?.escala) || 1.0;
+    const escala = parseFloat(mensaje?.payload?.escala) || 0.5;
+    const tabIdExterno = mensaje?.payload?.tabId || null;
     if (!base64) throw new Error("Falta el PDF (base64).");
-    return await renderPdfParaMapeos(base64, escala);
+    return await renderPdfParaMapeos(base64, escala, tabIdExterno);
   }
 
   if (accion === "storage:exportarMapeo") {
@@ -1827,8 +1833,10 @@ async function tgRenderPdfEnImagenes(base64Pdf, tabIdExterno) {
  * @param {number} escala - Escala de renderizado (default 1.0)
  * @returns {Promise<Array<{pagina:number, base64:string}>>}
  */
-async function renderPdfParaMapeos(base64Pdf, escala = 1.0) {
-  const { tabId, abrimosNosotros } = await tgConseguirTabControldoc();
+async function renderPdfParaMapeos(base64Pdf, escala = 0.5, tabIdExterno = null) {
+  const { tabId, abrimosNosotros } = tabIdExterno
+    ? { tabId: tabIdExterno, abrimosNosotros: false }
+    : await tgConseguirTabControldoc();
   try {
     const [{ result } = {}] = await chrome.scripting.executeScript({
       target: { tabId },

@@ -430,7 +430,6 @@ async function cargarPDF(file) {
   nuevoSeleccion.clear();
   nuevoBloques = [];
 
-  // Si venimos de re-mapear, pre-cargar los bloques base (sin páginas)
   if (nuevoModoEdicion?.bloquesBase?.length) {
     nuevoBloques = nuevoModoEdicion.bloquesBase.map((b, i) => ({
       id: i + 1,
@@ -441,7 +440,6 @@ async function cargarPDF(file) {
     }));
   }
 
-  // Mostrar workspace, ocultar dropzone
   dropzone.style.display = "none";
   const workspace = document.getElementById("nuevo-workspace");
   workspace.style.display = "flex";
@@ -449,31 +447,40 @@ async function cargarPDF(file) {
   document.getElementById("ws-filename").textContent = file.name;
   setWsStatus("Renderizando páginas…");
   document.getElementById("ws-crear-bloque").disabled = true;
-
   renderBloques();
 
   try {
-    // Convertir File a base64 para enviar al background
+    // Configurar worker local (evita CDN y restricciones de CSP)
+    if (window.pdfjsLib?.GlobalWorkerOptions) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("pdf.worker.min.js");
+    }
+
     const ab = await file.arrayBuffer();
-    const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+    const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(ab) }).promise;
 
-    const r = await chrome.runtime.sendMessage({
-      action: "mapeos:renderThumbnails",
-      payload: { base64: b64, escala: 1.0 }
-    });
+    nuevoImagenes = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      setWsStatus(`Renderizando página ${i} de ${pdf.numPages}…`);
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 0.5 });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      nuevoImagenes.push({ pagina: i, base64: canvas.toDataURL("image/jpeg", 0.82).split(",")[1] });
+    }
+    try { pdf.destroy(); } catch {}
 
-    if (!r?.ok) throw new Error(r?.error || "Error renderizando PDF");
-
-    nuevoImagenes = Array.isArray(r.data) ? r.data : [];
-    if (!nuevoImagenes.length) throw new Error("No se renderizó ninguna página.");
-
-    setWsStatus(`${nuevoImagenes.length} páginas cargadas`);
+    setWsStatus(`${nuevoImagenes.length} página(s) listas`);
     renderThumbs();
     renderBloques();
 
   } catch (e) {
     setWsStatus("Error: " + e.message);
-    mostrar("No se pudo renderizar el PDF. Asegurate de tener una pestaña de controldocumentario.com abierta.", "err");
+    mostrar("No se pudo renderizar el PDF: " + e.message, "err");
   }
 }
 
