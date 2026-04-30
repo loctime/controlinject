@@ -75,7 +75,9 @@
         "ocr-engine.js",
         "modal-seleccion.js",
         "page-inject-confirm-patch.js",
-        "vencimientos.js"
+        "vencimientos.js",
+        "mapeos.html",
+        "mapeos.js"
       ],
       "matches": [
         "https://controldocumentario.com/*"
