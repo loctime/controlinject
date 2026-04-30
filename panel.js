@@ -4,8 +4,7 @@
     filas: [],
     nextFilaId: 1,
     ultFilaNuevaId: null,
-    ultimaAlerta: { mensaje: "", ts: 0 },
-    sabanaPendiente: null
+    ultimaAlerta: { mensaje: "", ts: 0 }
   };
   // DEBUG: exponer estado para diagnostico desde consola
   window.__MAU_DEBUG__ = { estado };
@@ -19,11 +18,15 @@
   const ui = {
     panel: document.getElementById("docauto-panel"),
     minimizar: document.getElementById("mau-minimizar"),
-    // Modo trabajar
+    btnSettings: document.getElementById("mau-btn-settings"),
+    btnMapeos: document.getElementById("mau-btn-mapeos"),
+    loginScreen: document.getElementById("mau-login-screen"),
+    loginEmail: document.getElementById("mau-login-email"),
+    loginPass: document.getElementById("mau-login-pass"),
+    loginBtn: document.getElementById("mau-login-btn"),
+    loginGoogleBtn: document.getElementById("mau-login-google-btn"),
+    loginError: document.getElementById("mau-login-error"),
     modoTrabajar: document.getElementById("mau-modo-trabajar"),
-    modoSabana: document.getElementById("mau-modo-sabana"),
-    tabTrabajar: document.getElementById("mau-tab-trabajar"),
-    tabSabana: document.getElementById("mau-tab-sabana"),
     dropzone: document.getElementById("mau-dropzone"),
     seleccionar: document.getElementById("mau-seleccionar"),
     fileInput: document.getElementById("mau-file-input"),
@@ -32,31 +35,59 @@
     procesar: document.getElementById("mau-procesar"),
     pText: document.getElementById("mau-progress-text"),
     pInner: document.getElementById("mau-progress-inner"),
-    // Modo sabana
-    abrirMapeo: document.getElementById("mau-abrir-mapeo"),
-    sabanaWrap: document.getElementById("mau-sabana-wrap"),
-    sabanaEditor: document.getElementById("mau-sabana-editor"),
-    sabanaTablaBody: document.getElementById("mau-sabana-tabla-body"),
-    sabanaConfirmar: document.getElementById("mau-sabana-confirmar"),
-    sabanaCancelar: document.getElementById("mau-sabana-cancelar"),
-    pTextSabana: document.getElementById("mau-progress-text-sabana"),
-    pInnerSabana: document.getElementById("mau-progress-inner-sabana"),
     toast: document.getElementById("mau-toast")
   };
 
   if (!ui.panel) return;
   instalarInterceptorAlertasNativas();
 
-  // ── Tabs de modo ──
-  function activarTab(modo) {
-    const esTrab = modo === "trabajar";
-    ui.modoTrabajar.hidden = !esTrab;
-    ui.modoSabana.hidden = esTrab;
-    ui.tabTrabajar.classList.toggle("mau-tab-active", esTrab);
-    ui.tabSabana.classList.toggle("mau-tab-active", !esTrab);
+  // ── Login ──
+  async function verificarSesion() {
+    try {
+      const r = await chrome.runtime.sendMessage({ action: "firebase:status" });
+      const loggedIn = !!(r?.ok && r.data?.user);
+      ui.loginScreen.hidden = loggedIn;
+      ui.modoTrabajar.hidden = !loggedIn;
+    } catch (_) {
+      ui.loginScreen.hidden = false;
+      ui.modoTrabajar.hidden = true;
+    }
   }
-  if (ui.tabTrabajar) ui.tabTrabajar.addEventListener("click", () => activarTab("trabajar"));
-  if (ui.tabSabana) ui.tabSabana.addEventListener("click", () => activarTab("sabana"));
+
+  if (ui.loginBtn) ui.loginBtn.addEventListener("click", async () => {
+    const email = ui.loginEmail.value.trim();
+    const pass = ui.loginPass.value;
+    ui.loginError.textContent = "";
+    if (!email || !pass) { ui.loginError.textContent = "Completá email y contraseña."; return; }
+    ui.loginBtn.disabled = true;
+    ui.loginBtn.textContent = "Ingresando…";
+    try {
+      const r = await chrome.runtime.sendMessage({ action: "firebase:login", payload: { email, password: pass } });
+      if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesión.");
+      ui.loginScreen.hidden = true;
+      ui.modoTrabajar.hidden = false;
+    } catch (e) {
+      ui.loginError.textContent = e.message;
+    } finally {
+      ui.loginBtn.disabled = false;
+      ui.loginBtn.textContent = "Ingresar";
+    }
+  });
+
+  if (ui.loginGoogleBtn) ui.loginGoogleBtn.addEventListener("click", async () => {
+    ui.loginError.textContent = "";
+    ui.loginGoogleBtn.disabled = true;
+    try {
+      const r = await chrome.runtime.sendMessage({ action: "firebase:loginGoogle" });
+      if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesión con Google.");
+      ui.loginScreen.hidden = true;
+      ui.modoTrabajar.hidden = false;
+    } catch (e) {
+      ui.loginError.textContent = e.message;
+    } finally {
+      ui.loginGoogleBtn.disabled = false;
+    }
+  });
 
 
   ui.minimizar.addEventListener("click", () => {
@@ -65,9 +96,13 @@
   });
   ui.detectar.addEventListener("click", detectarRequerimientosPendientes);
   ui.procesar.addEventListener("click", procesarTodo);
-  if (ui.abrirMapeo) ui.abrirMapeo.addEventListener("click", abrirGestorMapeo);
+  if (ui.btnSettings) ui.btnSettings.addEventListener("click", () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("options.html") });
+  });
 
-  if (ui.sabanaCancelar) ui.sabanaCancelar.addEventListener("click", cancelarEditorSabana);
+  if (ui.btnMapeos) ui.btnMapeos.addEventListener("click", () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("mapeos.html") });
+  });
   ui.seleccionar.addEventListener("click", () => ui.fileInput.click());
   ui.fileInput.addEventListener("change", async () => {
     const archivos = [...(ui.fileInput.files || [])].filter((f) => /pdf$/i.test(f.name));
@@ -92,6 +127,7 @@
   );
   ui.dropzone.addEventListener("drop", manejarDrop);
   instalarBloqueoGlobalDrop();
+  verificarSesion();
 
   /**
    * Detecta el índice de la columna "Recurso" a partir de los headers de la tabla.
@@ -383,7 +419,7 @@
 
     const patrones = (await window.MAUStorage.leerPatronesSabana()) || [];
     if (!patrones.length) {
-      mostrarToast("No hay mapeo guardado. Primero subí una sábana en la pestaña «Subir sábana».");
+      mostrarToast("No hay mapeo guardado. Abrí la página de Mapeos para crear uno.");
       return;
     }
 
@@ -415,7 +451,7 @@
     }
 
     if (!referenciasDisponibles.length) {
-      mostrarToast(`No hay mapeos con imágenes guardadas. Hacé un mapeo primero desde "Aprender".`);
+      mostrarToast(`No hay mapeos con imágenes guardadas. Creá un mapeo desde la página de Mapeos.`);
       return;
     }
 
@@ -495,34 +531,6 @@
     ui.pText.textContent = "Sin procesamiento en curso";
     ui.pInner.style.width = "0%";
     renderTabla();
-  }
-
-  // ── Flujo sábana (modo aprendizaje) — se activa desde la tab «Subir sábana» ──
-  async function procesarArchivosPdfSabana(archivos, origen) {
-    console.log(`[MAU] [SÁBANA] Procesando ${archivos.length} PDF(s). Origen: ${origen}`);
-    if (!estado.requerimientos.length) await detectarRequerimientosPendientes();
-    const memoria = await window.MAUStorage.leerMemoria();
-
-    for (const archivo of archivos) {
-      console.log("[MAU] Procesando sábana:", archivo.name);
-      let numPag = 0;
-      try {
-        if (window.MAUOcrEngine?.contarPaginasPdf) numPag = await window.MAUOcrEngine.contarPaginasPdf(archivo);
-      } catch (e) { console.warn("[MAU] No se pudo contar páginas:", e); }
-
-      if (numPag > 1) {
-        estado.sabanaPendiente = archivo;
-        mostrarSeccionSabana(true);
-        console.log("[MAU] PDF sábana pendiente:", archivo.name);
-      }
-      // PDF de 1 página en modo sábana → ignorar (no aplica)
-    }
-    renderTabla();
-  }
-
-  function mostrarSeccionSabana(visible) {
-    if (ui.sabanaWrap) ui.sabanaWrap.hidden = !visible;
-    if (visible && ui.sabanaEditor) ui.sabanaEditor.hidden = true;
   }
 
   function mostrarToast(mensaje) {
@@ -745,17 +753,6 @@
       }
     }
     renderTabla();
-  }
-
-  function resetSabanaUi() {
-    estado.sabanaPendiente = null;
-    if (ui.sabanaWrap) ui.sabanaWrap.hidden = true;
-    if (ui.sabanaTablaBody) ui.sabanaTablaBody.innerHTML = "";
-    actualizarProgreso(0, 0, "Sin procesamiento en curso");
-  }
-
-  function cancelarEditorSabana() {
-    ui.pText.textContent = "Sin procesamiento en curso";
   }
 
   /**
@@ -2240,7 +2237,7 @@ function expandirRequerimientosPorDestino(requerimientosBase, destino, meta) {
     }
 
     renderTabla();
-    resetSabanaUi();
+    actualizarProgreso(0, 0, "Sin procesamiento en curso");
     mostrarToast(`Listo: ${archivosPorBloque.length} bloque(s) asignados. Revisá la tabla y apretá «Procesar todo».`);
   }
 
@@ -2257,199 +2254,6 @@ function expandirRequerimientosPorDestino(requerimientosBase, destino, meta) {
     window.addEventListener("dragenter", handler, true);
     window.addEventListener("dragover", handler, true);
     window.addEventListener("drop", handler, true);
-  }
-
-  // ===================== GESTOR DE MAPEO =====================
-
-  /**
-   * Abre el gestor de mapeo. Si hay mapeos guardados los muestra.
-   * Si no hay, o el usuario elige "nuevo", abre el flujo de sábana para crear uno.
-   */
-  function pedirPdfAlUsuario() {
-    return new Promise((resolve) => {
-      const inp = document.createElement("input");
-      inp.type = "file";
-      inp.accept = "application/pdf,.pdf";
-      inp.addEventListener("change", () => resolve(inp.files?.[0] || null));
-      inp.addEventListener("cancel", () => resolve(null));
-      inp.click();
-    });
-  }
-
-  function elegirPatronUI(patrones) {
-    return new Promise((resolve) => {
-      const overlay = document.createElement("div");
-      overlay.className = "mau-confirm";
-      const box = document.createElement("div");
-      box.className = "mau-confirm-box";
-      box.style.cssText = "width:460px;max-height:70vh;display:flex;flex-direction:column;padding:0;overflow:hidden;";
-
-      const hdr = document.createElement("div");
-      hdr.style.cssText = "padding:14px 18px 12px;border-bottom:1px solid rgba(148,163,184,.15);font-weight:700;font-size:15px;flex-shrink:0;";
-      hdr.textContent = "¿Con qué mapeo abrís?";
-      box.appendChild(hdr);
-
-      const lista = document.createElement("div");
-      lista.style.cssText = "overflow-y:auto;flex:1;padding:10px 14px;display:flex;flex-direction:column;gap:7px;";
-
-      const mkBtn = (label, sub, onClick) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.style.cssText = "background:rgba(148,163,184,.07);border:1px solid rgba(148,163,184,.18);border-radius:8px;padding:10px 14px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:2px;width:100%;";
-        btn.innerHTML = `<span style="font-weight:600;font-size:13px;color:#e2e8f0;">${escapeHtml(label)}</span>${sub ? `<span style="font-size:11px;color:#64748b;">${escapeHtml(sub)}</span>` : ""}`;
-        btn.addEventListener("mouseenter", () => { btn.style.borderColor = "rgba(56,189,248,.4)"; btn.style.background = "rgba(56,189,248,.07)"; });
-        btn.addEventListener("mouseleave", () => { btn.style.borderColor = "rgba(148,163,184,.18)"; btn.style.background = "rgba(148,163,184,.07)"; });
-        btn.addEventListener("click", () => { overlay.remove(); onClick(); });
-        return btn;
-      };
-
-      patrones.forEach((p) => {
-        const n = Array.isArray(p.bloquesModal) ? p.bloquesModal.length : 0;
-        const pags = p.totalPaginas || (Array.isArray(p.firmaTipos) ? p.firmaTipos.length : 0);
-        const sub = [pags ? `${pags} pág.` : null, n ? `${n} bloque(s)` : null].filter(Boolean).join(" · ");
-        lista.appendChild(mkBtn(p.nombre || "(sin nombre)", sub, () => resolve(p)));
-      });
-      lista.appendChild(mkBtn("➕ Nuevo (empezar desde cero)", "", () => resolve(null)));
-
-      box.appendChild(lista);
-      overlay.appendChild(box);
-      document.body.appendChild(overlay);
-      overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") { overlay.remove(); resolve(null); } });
-    });
-  }
-
-  async function abrirGestorMapeo() {
-    // 1. Asegurar PDF
-    let file = estado.sabanaPendiente;
-    if (!file) {
-      file = await pedirPdfAlUsuario();
-      if (!file) return;
-      estado.sabanaPendiente = file;
-      mostrarSeccionSabana(true);
-    }
-
-    if (!window.MAUModalSeleccion) {
-      mostrarToast("Modal no disponible. Recargá la extensión.");
-      return;
-    }
-    if (!estado.requerimientos.length) await detectarRequerimientosPendientes();
-
-    // 2. Elegir patrón a pre-cargar
-    const patrones = (await window.MAUStorage.leerPatronesSabana()) || [];
-    let patronElegido = null;
-    if (patrones.length === 1) {
-      patronElegido = patrones[0];
-    } else if (patrones.length > 1) {
-      patronElegido = await elegirPatronUI(patrones);
-    }
-
-    // Cargar bloques del patrón existente SIN páginas asignadas.
-    // Así el usuario solo asigna las páginas del PDF nuevo sin luchar contra
-    // asignaciones viejas que ya no corresponden.
-    const bloquesIniciales = (patronElegido?.bloquesModal || []).map(b => ({
-      ...b,
-      paginas: []
-    }));
-    const nombreBase = patronElegido?.nombre
-      || `mapeo-${new Date().toISOString().slice(0, 10)}-${file.name.replace(/\.pdf$/i, "")}`;
-
-    // 3. Abrir modal grande con bloques pre-cargados
-    await window.MAUModalSeleccion.abrir({
-      file,
-      requerimientos: estado.requerimientos,
-      bloquesIniciales,
-      nombrePatron: patronElegido?.nombre || "",
-      onConfirm: async (bloques, numPaginas) => {
-        // Claude lee todas las paginas solo para extraer metadata generica
-        // (persona, CUIL, patente, periodo y texto estable). El matching de
-        // trabajo se hace por imagen contra el mapeo guardado.
-        let textosPorPagina = [];
-        try {
-          ui.pText.textContent = "Leyendo contenido de las páginas con Claude…";
-          textosPorPagina = await window.MAUOcrEngine.extraerTextoPorPagina(
-            file,
-            (info) => {
-              if (info.pagina != null) {
-                actualizarProgreso(info.pagina, info.totalPaginas, info.mensaje || "");
-                ui.pInner.style.width = `${Math.round((info.pagina / info.totalPaginas) * 100)}%`;
-              }
-            }
-            // Sin paginasEspecificas: lee todas las paginas para metadata.
-          );
-        } catch (e) {
-          alertarErrorOcr(e);
-          ui.pText.textContent = "Sin procesamiento en curso";
-          return; // No continuar sin Claude
-        }
-
-        // Armar texto estable por bloque.
-        // El mapeo guarda solo estructura (bloques + requerimientos), sin persona.
-        // La persona se detecta en tiempo de trabajo.
-        const bloquesConTexto = bloques.map((b) => {
-          const textoBloque = b.paginas
-            .map((p) => textosPorPagina.find((t) => t.pagina === p)?.textoEstable || "")
-            .filter(Boolean)
-            .join(" ");
-          return {
-            nombre: b.nombre,
-            paginas: b.paginas,
-            requerimientos: b.requerimientos,
-            destino: b.destino || { modo: "uno", entidadesObjetivo: [] },
-            textoEstableBloque: textoBloque,
-            meta: {}
-          };
-        });
-
-        try {
-          await window.MAUStorage.guardarPatronSabana({
-            nombre: nombreBase,
-            totalPaginas: numPaginas || 0,
-            bloquesModal: bloquesConTexto
-          });
-        } catch (err) {
-          console.warn("[MAU] No se pudo guardar el patrón:", err);
-        }
-
-        // Guardar imágenes de referencia en IndexedDB para comparación futura
-        if (window.MAUImageDB && window.MAUOcrEngine?.renderizarPaginas) {
-          try {
-            ui.pText.textContent = "Guardando imágenes de referencia…";
-            const imagenesRef = await window.MAUOcrEngine.renderizarPaginas(
-              file,
-              (info) => actualizarProgreso(info.pagina, info.totalPaginas, `Guardando imagen ${info.pagina}/${info.totalPaginas}…`),
-              { escala: 120, calidad: 0.55 }
-            );
-            const snapshotBloques = bloquesConTexto.map((b) => ({
-              nombre: b.nombre,
-              paginas: b.paginas,
-              requerimientos: b.requerimientos,
-              destino: b.destino || { modo: "uno", entidadesObjetivo: [] },
-              meta: b.meta || {}
-            }));
-            // Backend es la fuente de verdad: si falla remoto, no confirmar guardado completo.
-            await window.MAUStorage.guardarImagenesPatronRemoto({
-              nombre: nombreBase,
-              imagenes: imagenesRef,
-              bloques: snapshotBloques
-            });
-            await window.MAUImageDB.guardarImagenesPatron(nombreBase, {
-              imagenes: imagenesRef,
-              bloques: snapshotBloques
-            });
-            mostrarToast(`Mapeo guardado en backend: ${bloques.length} bloque(s).`);
-            console.log(`[MAU] Imágenes de referencia guardadas para "${nombreBase}" (${imagenesRef.length} páginas)`);
-          } catch (e) {
-            console.warn("[MAU] No se pudieron guardar las imágenes de referencia:", e);
-            mostrarToast(`No se pudo guardar en backend: ${e?.message || e}.`);
-            ui.pText.textContent = "Error guardando mapeo en backend.";
-            return;
-          }
-        }
-
-        resetSabanaUi();
-        await aplicarBloquesModal(file, bloquesConTexto);
-      }
-    });
   }
 
   // Exponer funciones internas para que el background (flujo de Telegram)
