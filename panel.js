@@ -9,9 +9,11 @@
   // DEBUG: exponer estado para diagnostico desde consola
   window.__MAU_DEBUG__ = { estado };
 
-  // Set logo src from extension resources
   const logoEl = document.getElementById("mau-logo");
-  if (logoEl && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
+  const panelEl = document.getElementById("docauto-panel");
+  if (logoEl && panelEl && panelEl.dataset.extensionUrl) {
+    logoEl.src = panelEl.dataset.extensionUrl + "icons/icon-128.png";
+  } else if (logoEl && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
     logoEl.src = chrome.runtime.getURL("icons/icon-128.png");
   }
 

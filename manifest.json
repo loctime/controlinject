@@ -83,7 +83,8 @@
         "mapeos.html",
         "mapeos.js",
         "options.html",
-        "options.js"
+        "options.js",
+        "icons/*"
       ],
       "matches": [
         "https://controldocumentario.com/*"
