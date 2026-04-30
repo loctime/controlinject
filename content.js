@@ -7,7 +7,7 @@
   await inyectarCss();
   await inyectarPanelHtml();
   iniciarBridgeMensajes();
-  window.MAU_EXTENSION_URL = chrome.runtime.getURL("");
+  inyectarExtensionUrl();
   await cargarScripts(["storage.js", "imagedb.js", "matcher.js", "pdf-splitter.js", "ocr-engine.js", "modal-seleccion.js", "panel.js"]);
 
   function inyectarCss() {
@@ -38,6 +38,12 @@
         (document.head || document.documentElement).appendChild(s);
       });
     }
+  }
+
+  function inyectarExtensionUrl() {
+    const s = document.createElement("script");
+    s.textContent = `window.MAU_EXTENSION_URL = ${JSON.stringify(chrome.runtime.getURL(""))};`;
+    (document.head || document.documentElement).appendChild(s);
   }
 
   function iniciarBridgeMensajes() {
