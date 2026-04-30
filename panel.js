@@ -96,12 +96,13 @@
   });
   ui.detectar.addEventListener("click", detectarRequerimientosPendientes);
   ui.procesar.addEventListener("click", procesarTodo);
+  const extUrl = ui.panel?.dataset?.extensionUrl || "";
   if (ui.btnSettings) ui.btnSettings.addEventListener("click", () => {
-    window.open((window.MAU_EXTENSION_URL || "") + "options.html");
+    window.open(extUrl + "options.html");
   });
 
   if (ui.btnMapeos) ui.btnMapeos.addEventListener("click", () => {
-    window.open((window.MAU_EXTENSION_URL || "") + "mapeos.html");
+    window.open(extUrl + "mapeos.html");
   });
   ui.seleccionar.addEventListener("click", () => ui.fileInput.click());
   ui.fileInput.addEventListener("change", async () => {
