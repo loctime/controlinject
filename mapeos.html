@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Control Documentario - Mapeos</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #5b6473;
+      --line: #d7dfeb;
+      --primary: #0f5cc0;
+      --primary-2: #2b7be6;
+      --ok-bg: #ecfdf3;
+      --ok-text: #0f7a3d;
+      --err-bg: #fef2f2;
+      --err-text: #b42318;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+      background:
+        radial-gradient(circle at 20% 0%, #dcecff 0%, transparent 35%),
+        radial-gradient(circle at 100% 100%, #ffe7d3 0%, transparent 30%),
+        var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 980px;
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .hero {
+      background: linear-gradient(130deg, #0f5cc0, #2b7be6);
+      color: #fff;
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 10px 25px rgba(15, 92, 192, 0.2);
+    }
+
+    .hero-top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .hero h1 { margin: 0; font-size: 24px; }
+
+    .hero p {
+      margin: 6px 0 0;
+      color: #e8f1ff;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .cards-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 3px 14px rgba(16, 24, 40, 0.06);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card.card-active {
+      border-color: var(--primary-2);
+      box-shadow: 0 3px 14px rgba(43, 123, 230, 0.18);
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-active {
+      font-size: 10px;
+      font-weight: 600;
+      background: var(--primary);
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .card-meta {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .chip {
+      font-size: 11px;
+      background: #eef3fb;
+      color: #1f3f74;
+      border: 1px solid #d7e5ff;
+      border-radius: 999px;
+      padding: 2px 9px;
+    }
+
+    .card-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: auto;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      color: #fff;
+      transition: transform 0.12s ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+
+    button.alt {
+      background: #eef3fb;
+      color: #1f3f74;
+      border: 1px solid #d7e5ff;
+    }
+
+    button.danger {
+      background: #fef2f2;
+      color: var(--err-text);
+      border: 1px solid #f7c3c0;
+    }
+
+    button.danger:hover { background: #fee2e2; }
+
+    .empty-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--muted);
+      font-size: 15px;
+      background: var(--card);
+      border-radius: 16px;
+      border: 1px dashed var(--line);
+    }
+
+    .empty-state p { margin: 8px 0 0; }
+
+    #estado {
+      position: sticky;
+      bottom: 12px;
+      margin: 0;
+      padding: 11px 12px;
+      border-radius: 10px;
+      background: #eef2f8;
+      color: #2a3648;
+      border: 1px solid #d7dfeb;
+      font-size: 13px;
+      min-height: 18px;
+      z-index: 3;
+    }
+
+    #estado.ok { background: var(--ok-bg); color: var(--ok-text); border-color: #b8eacb; }
+    #estado.err { background: var(--err-bg); color: var(--err-text); border-color: #f7c3c0; }
+
+    #no-sesion {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--muted);
+      background: var(--card);
+      border-radius: 16px;
+      border: 1px solid var(--line);
+    }
+
+    input[type="file"] { display: none; }
+
+    @media (max-width: 640px) {
+      body { padding: 14px; }
+      .hero h1 { font-size: 21px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+
+    <section class="hero">
+      <div class="hero-top">
+        <img src="icons/icon128.png" alt="Logo" width="38" height="38" style="border-radius:10px;background:#fff;padding:4px;" />
+        <h1>Gestión de Mapeos</h1>
+      </div>
+      <p>Cada mapeo guarda la estructura de una sábana. Podés tener varios y activar el que necesités.</p>
+    </section>
+
+    <div id="no-sesion" hidden>
+      <strong>No hay sesión activa</strong>
+      <p>Iniciá sesión desde la extensión para ver tus mapeos.</p>
+    </div>
+
+    <div id="contenido-principal">
+      <div class="toolbar">
+        <button id="btn-crear" type="button">+ Crear nuevo mapeo</button>
+        <button id="btn-importar" type="button" class="alt">Importar mapeo</button>
+        <input id="input-importar" type="file" accept=".json" />
+      </div>
+
+      <div id="cards-container" class="cards-grid" style="margin-top:14px;">
+        <!-- Cards generadas por JS -->
+      </div>
+    </div>
+
+  </main>
+
+  <p id="estado"></p>
+
+  <script src="mapeos.js"></script>
+</body>
+</html>
