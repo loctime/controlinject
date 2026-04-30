@@ -77,7 +77,9 @@
         "page-inject-confirm-patch.js",
         "vencimientos.js",
         "mapeos.html",
-        "mapeos.js"
+        "mapeos.js",
+        "options.html",
+        "options.js"
       ],
       "matches": [
         "https://controldocumentario.com/*"
