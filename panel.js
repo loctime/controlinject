@@ -12,7 +12,7 @@
   // Set logo src from extension resources
   const logoEl = document.getElementById("mau-logo");
   if (logoEl && typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
-    logoEl.src = chrome.runtime.getURL("icons/icon128.png");
+    logoEl.src = chrome.runtime.getURL("icons/icon-128.png");
   }
 
   const ui = {
