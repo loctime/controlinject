@@ -7,6 +7,7 @@
   await inyectarCss();
   await inyectarPanelHtml();
   iniciarBridgeMensajes();
+  window.MAU_EXTENSION_URL = chrome.runtime.getURL("");
   await cargarScripts(["storage.js", "imagedb.js", "matcher.js", "pdf-splitter.js", "ocr-engine.js", "modal-seleccion.js", "panel.js"]);
 
   function inyectarCss() {

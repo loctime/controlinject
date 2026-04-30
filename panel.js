@@ -44,8 +44,8 @@
   // ── Login ──
   async function verificarSesion() {
     try {
-      const r = await chrome.runtime.sendMessage({ action: "firebase:status" });
-      const loggedIn = !!(r?.ok && r.data?.user);
+      const r = await window.MAUStorage.firebaseStatus();
+      const loggedIn = !!(r?.user);
       if (ui.loginScreen) ui.loginScreen.hidden = loggedIn;
       if (ui.modoTrabajar) ui.modoTrabajar.hidden = !loggedIn;
     } catch (_) {
@@ -62,8 +62,7 @@
     ui.loginBtn.disabled = true;
     ui.loginBtn.textContent = "Ingresando…";
     try {
-      const r = await chrome.runtime.sendMessage({ action: "firebase:login", payload: { email, password: pass } });
-      if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesión.");
+      await window.MAUStorage.firebaseLogin(email, pass);
       ui.loginScreen.hidden = true;
       ui.modoTrabajar.hidden = false;
     } catch (e) {
@@ -79,8 +78,7 @@
     ui.loginGoogleBtn.disabled = true;
     ui.loginGoogleBtn.textContent = "Ingresando…";
     try {
-      const r = await chrome.runtime.sendMessage({ action: "firebase:loginGoogle" });
-      if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesión con Google.");
+      await window.MAUStorage.firebaseLoginGoogle();
       ui.loginScreen.hidden = true;
       ui.modoTrabajar.hidden = false;
     } catch (e) {
@@ -99,11 +97,11 @@
   ui.detectar.addEventListener("click", detectarRequerimientosPendientes);
   ui.procesar.addEventListener("click", procesarTodo);
   if (ui.btnSettings) ui.btnSettings.addEventListener("click", () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL("options.html") });
+    window.open((window.MAU_EXTENSION_URL || "") + "options.html");
   });
 
   if (ui.btnMapeos) ui.btnMapeos.addEventListener("click", () => {
-    chrome.tabs.create({ url: chrome.runtime.getURL("mapeos.html") });
+    window.open((window.MAU_EXTENSION_URL || "") + "mapeos.html");
   });
   ui.seleccionar.addEventListener("click", () => ui.fileInput.click());
   ui.fileInput.addEventListener("change", async () => {

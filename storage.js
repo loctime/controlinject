@@ -38,6 +38,18 @@
     return enviarMensajeExtension({ action: "firebase:syncDown" });
   }
 
+  async function firebaseStatus() {
+    return enviarMensajeExtension({ action: "firebase:status" });
+  }
+
+  async function firebaseLogin(email, password) {
+    return enviarMensajeExtension({ action: "firebase:login", payload: { email, password } });
+  }
+
+  async function firebaseLoginGoogle() {
+    return enviarMensajeExtension({ action: "firebase:loginGoogle" });
+  }
+
   async function limpiarPatronesSabana() {
     await enviarMensajeExtension({ action: "storage:limpiarPatronesSabana" });
   }
@@ -72,7 +84,10 @@
     guardarPatronesSabana,
     limpiarPatronesSabana,
     compararConReferencia,
-    normalizar
+    normalizar,
+    firebaseStatus,
+    firebaseLogin,
+    firebaseLoginGoogle
   };
 
   function enviarMensajeExtension(payload) {
