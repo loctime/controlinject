@@ -5,21 +5,29 @@
       <strong>DocAutomatización</strong>
       <span class="mau-header-badge">PRO</span>
     </div>
-    <button id="mau-minimizar" title="Minimizar">—</button>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <button id="mau-btn-mapeos" title="Gestión de Mapeos" style="font-size:13px;width:auto;padding:4px 8px;gap:4px;display:flex;align-items:center;">🗂 Mapeos</button>
+      <button id="mau-btn-settings" title="Ajustes">⚙</button>
+      <button id="mau-minimizar" title="Minimizar">—</button>
+    </div>
   </header>
 
   <section class="mau-body">
 
-    <!-- SELECTOR DE MODO -->
-    <div class="mau-modo-tabs">
-      <button id="mau-tab-trabajar" class="mau-tab mau-tab-active">📤 Trabajar</button>
-      <button id="mau-tab-sabana" class="mau-tab">🎓 Aprender</button>
+    <!-- ══ PANTALLA DE LOGIN ══ -->
+    <div id="mau-login-screen">
+      <p style="color:#94a3b8;font-size:13px;margin:0 0 16px;">Iniciá sesión para usar la extensión.</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <input id="mau-login-email" type="email" placeholder="Email" style="background:rgba(148,163,184,.1);border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:10px 12px;color:#e2e8f0;font-size:14px;outline:none;width:100%;box-sizing:border-box;" />
+        <input id="mau-login-pass" type="password" placeholder="Contraseña" style="background:rgba(148,163,184,.1);border:1px solid rgba(148,163,184,.2);border-radius:8px;padding:10px 12px;color:#e2e8f0;font-size:14px;outline:none;width:100%;box-sizing:border-box;" />
+        <button id="mau-login-btn" class="mau-btn">Ingresar</button>
+        <button id="mau-login-google-btn" class="mau-btn mau-btn-secondary">Ingresar con Google</button>
+        <p id="mau-login-error" style="color:#f87171;font-size:12px;margin:0;min-height:16px;"></p>
+      </div>
     </div>
 
-    <!-- ══════════════════════════════════════════════
-         MODO TRABAJAR
-    ══════════════════════════════════════════════ -->
-    <div id="mau-modo-trabajar">
+    <!-- ══ MODO TRABAJAR ══ -->
+    <div id="mau-modo-trabajar" hidden>
       <p class="mau-modo-hint">Subí cualquier documento (recibos, comprobantes, etc.). Claude lo identifica y lo asigna al requerimiento correcto usando el mapeo guardado.</p>
 
       <div id="mau-dropzone" class="mau-dropzone">
@@ -52,46 +60,6 @@
       </table>
 
       <button id="mau-procesar" class="mau-btn mau-btn-main">Procesar todo</button>
-    </div>
-
-    <!-- ══════════════════════════════════════════════
-         MODO SÁBANA (aprendizaje / mapeo)
-    ══════════════════════════════════════════════ -->
-    <div id="mau-modo-sabana" hidden>
-      <p class="mau-modo-hint">Enseñale al sistema la estructura de tu sábana. Abrí "Gestión de mapeos" y seleccioná el PDF para configurar los bloques.</p>
-
-      <div class="mau-actions">
-        <button id="mau-abrir-mapeo" class="mau-btn mau-btn-secondary">🗂 Gestión de mapeos</button>
-      </div>
-
-      <div id="mau-sabana-wrap" class="mau-sabana-wrap" hidden>
-        <div id="mau-sabana-editor" class="mau-sabana-editor" hidden>
-          <label class="mau-patron-label">Nombre del patrón (para reutilizar después)
-            <input id="mau-patron-nombre" type="text" placeholder="Lista A" class="mau-input" />
-          </label>
-          <table class="mau-tabla mau-sabana-tabla">
-            <thead>
-              <tr>
-                <th>Bloque</th>
-                <th>Desde</th>
-                <th>Hasta</th>
-              </tr>
-            </thead>
-            <tbody id="mau-sabana-tabla-body"></tbody>
-          </table>
-          <div class="mau-sabana-botones">
-            <button type="button" id="mau-sabana-confirmar" class="mau-btn">Confirmar y guardar patrón</button>
-            <button type="button" id="mau-sabana-cancelar" class="mau-btn mau-btn-secondary">Cancelar</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="mau-progress-wrap">
-        <div id="mau-progress-text-sabana">Sin procesamiento en curso</div>
-        <div class="mau-progress-bar">
-          <div id="mau-progress-inner-sabana"></div>
-        </div>
-      </div>
     </div>
 
   </section>
