@@ -42,15 +42,24 @@
   instalarInterceptorAlertasNativas();
 
   // ── Login ──
+  function mostrarEmailHeader(email) {
+    const el = document.getElementById("mau-user-email");
+    if (!el) return;
+    el.textContent = email || "";
+    el.title = email || "";
+  }
+
   async function verificarSesion() {
     try {
       const r = await window.MAUStorage.firebaseStatus();
       const loggedIn = !!(r?.user);
       if (ui.loginScreen) ui.loginScreen.hidden = loggedIn;
       if (ui.modoTrabajar) ui.modoTrabajar.hidden = !loggedIn;
+      mostrarEmailHeader(loggedIn ? (r.user.email || "") : "");
     } catch (_) {
       if (ui.loginScreen) ui.loginScreen.hidden = false;
       if (ui.modoTrabajar) ui.modoTrabajar.hidden = true;
+      mostrarEmailHeader("");
     }
   }
 
@@ -62,9 +71,10 @@
     ui.loginBtn.disabled = true;
     ui.loginBtn.textContent = "Ingresando…";
     try {
-      await window.MAUStorage.firebaseLogin(email, pass);
+      const loginResult = await window.MAUStorage.firebaseLogin(email, pass);
       ui.loginScreen.hidden = true;
       ui.modoTrabajar.hidden = false;
+      mostrarEmailHeader(loginResult?.user?.email || email);
     } catch (e) {
       if (ui.loginError) ui.loginError.textContent = e.message;
     } finally {
@@ -78,9 +88,10 @@
     ui.loginGoogleBtn.disabled = true;
     ui.loginGoogleBtn.textContent = "Ingresando…";
     try {
-      await window.MAUStorage.firebaseLoginGoogle();
+      const googleResult = await window.MAUStorage.firebaseLoginGoogle();
       ui.loginScreen.hidden = true;
       ui.modoTrabajar.hidden = false;
+      mostrarEmailHeader(googleResult?.user?.email || "");
     } catch (e) {
       if (ui.loginError) ui.loginError.textContent = e.message;
     } finally {
