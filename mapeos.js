@@ -1,25 +1,72 @@
-const estadoEl = document.getElementById("estado");
-const noSesionEl = document.getElementById("no-sesion");
-const contenidoEl = document.getElementById("contenido-principal");
-const cardsContainer = document.getElementById("cards-container");
+// ─────────────────────────────────────────────
+//  mapeos.js — Gestión de mapeos + Mappear Nuevo
+// ─────────────────────────────────────────────
 
 const KEY_PATRON_ACTIVO = "controlinject_patron_activo";
 
+// ── Estado global ──
+let patrones = [];
+let patronActivo = null;
+let expandedCard = null; // nombre del patron con expand abierto
+
+// ── Estado de "Mappear Nuevo" ──
+let nuevoFile = null;
+let nuevoImagenes = [];           // [{ pagina, base64 }] — todas las páginas renderizadas
+let nuevoSeleccion = new Set();
+let nuevoBloques = [];            // [{ id, nombre, paginas, requerimientos }]
+let nuevoUltimoClic = null;
+let nuevoModoEdicion = null;      // { nombre, bloquesBase } si estamos editando un patron existente
+
+// ── Elementos DOM ──
+const estadoEl = document.getElementById("estado");
+
+// ─────────────────────────────────────────────
+//  UTILIDADES
+// ─────────────────────────────────────────────
 function mostrar(msg, tipo) {
   estadoEl.textContent = msg;
   estadoEl.className = tipo || "";
 }
 
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
 function formatFecha(ts) {
   if (!ts) return null;
   try { return new Date(ts).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }); }
-  catch (_) { return null; }
+  catch { return null; }
 }
 
-function escapeHtml(str) {
-  return String(str || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+// ─────────────────────────────────────────────
+//  TABS
+// ─────────────────────────────────────────────
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+});
+
+function switchTab(tabName) {
+  document.querySelectorAll(".tab-btn").forEach(b => {
+    b.classList.remove("active", "active-green");
+  });
+  document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+
+  const btn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+  const pane = document.getElementById(`tab-${tabName}`);
+  if (!btn || !pane) return;
+
+  if (tabName === "nuevo") {
+    btn.classList.add("active-green");
+  } else {
+    btn.classList.add("active");
+  }
+  pane.classList.add("active");
 }
 
+// ─────────────────────────────────────────────
+//  STORAGE
+// ─────────────────────────────────────────────
 async function leerPatronActivo() {
   const data = await chrome.storage.local.get(KEY_PATRON_ACTIVO);
   return data[KEY_PATRON_ACTIVO] || null;
@@ -29,23 +76,28 @@ async function guardarPatronActivo(nombre) {
   await chrome.storage.local.set({ [KEY_PATRON_ACTIVO]: nombre });
 }
 
+// ─────────────────────────────────────────────
+//  MIS MAPEOS — carga y render de cards
+// ─────────────────────────────────────────────
 async function cargarPatrones() {
-  const [r, patronActivo] = await Promise.all([
+  const [r, activo] = await Promise.all([
     chrome.runtime.sendMessage({ action: "storage:leerPatronesSabana" }),
     leerPatronActivo()
   ]);
-  const patrones = Array.isArray(r) ? r : [];
-  renderCards(patrones, patronActivo);
+  patrones = Array.isArray(r) ? r : [];
+  patronActivo = activo;
+  renderCards();
 }
 
-function renderCards(patrones, patronActivo) {
-  cardsContainer.innerHTML = "";
+function renderCards() {
+  const container = document.getElementById("cards-container");
+  container.innerHTML = "";
 
   if (!patrones.length) {
-    cardsContainer.innerHTML = `
-      <div class="empty-state" style="grid-column:1/-1;">
+    container.innerHTML = `
+      <div class="empty-state">
         <strong>No tenés mapeos guardados</strong>
-        <p>Creá uno nuevo o importá uno existente.</p>
+        <p>Creá uno en la pestaña "+ Mappear Nuevo" o importá uno existente.</p>
       </div>`;
     return;
   }
@@ -56,14 +108,20 @@ function renderCards(patrones, patronActivo) {
     const totalPags = p.totalPaginas || bloques.reduce((acc, b) => acc + (b.paginas?.length || 0), 0);
     const fecha = formatFecha(p.updatedAt || p.createdAt);
     const esActivo = nombre === patronActivo;
+    const estaExpanded = expandedCard === nombre;
 
+    const wrap = document.createElement("div");
+    wrap.className = "card-wrap";
+
+    // ── Card principal ──
     const card = document.createElement("article");
-    card.className = "card" + (esActivo ? " card-active" : "");
+    card.className = "card" + (esActivo ? " card-active" : "") + (estaExpanded ? " card-expanded" : "");
+
     card.innerHTML = `
-      <h2 class="card-title">
+      <div class="card-title">
         ${escapeHtml(nombre)}
         ${esActivo ? '<span class="badge-active">Activo</span>' : ""}
-      </h2>
+      </div>
       <div class="card-meta">
         ${fecha ? `<span>Actualizado: ${fecha}</span>` : ""}
         <span>${bloques.length} bloque(s) · ${totalPags} página(s)</span>
@@ -73,23 +131,208 @@ function renderCards(patrones, patronActivo) {
         ${bloques.length > 8 ? `<span class="chip">+${bloques.length - 8} más</span>` : ""}
       </div>
       <div class="card-actions">
-        ${!esActivo ? `<button class="alt btn-activar" data-nombre="${escapeHtml(nombre)}">Usar como activo</button>` : ""}
-        <button class="alt btn-exportar" data-nombre="${escapeHtml(nombre)}">Exportar</button>
-        <button class="danger btn-eliminar" data-nombre="${escapeHtml(nombre)}">Eliminar</button>
+        ${!esActivo ? `<button class="alt sm btn-activar" data-nombre="${escapeHtml(nombre)}">Usar</button>` : ""}
+        <button class="alt sm btn-editar" data-nombre="${escapeHtml(nombre)}">${estaExpanded ? "▲ Cerrar" : "✏ Editar"}</button>
+        <button class="sm btn-remapear" data-nombre="${escapeHtml(nombre)}">↺ Re-mapear</button>
+        <button class="alt sm btn-exportar" data-nombre="${escapeHtml(nombre)}">Exportar</button>
+        <button class="danger sm btn-eliminar" data-nombre="${escapeHtml(nombre)}">Eliminar</button>
       </div>`;
 
-    card.querySelector(".btn-exportar")?.addEventListener("click", () => exportarPatron(nombre, p));
-    card.querySelector(".btn-eliminar")?.addEventListener("click", () => eliminarPatron(nombre, patrones, patronActivo));
+    // Eventos de la card
     card.querySelector(".btn-activar")?.addEventListener("click", async () => {
       await guardarPatronActivo(nombre);
       mostrar(`"${nombre}" marcado como activo.`, "ok");
       await cargarPatrones();
     });
 
-    cardsContainer.appendChild(card);
+    card.querySelector(".btn-editar").addEventListener("click", () => {
+      expandedCard = estaExpanded ? null : nombre;
+      renderCards();
+    });
+
+    card.querySelector(".btn-remapear").addEventListener("click", () => {
+      abrirRemapear(p);
+    });
+
+    card.querySelector(".btn-exportar").addEventListener("click", () => exportarPatron(nombre, p));
+    card.querySelector(".btn-eliminar").addEventListener("click", () => eliminarPatron(nombre));
+
+    wrap.appendChild(card);
+
+    // ── Panel expandido de edición ──
+    if (estaExpanded) {
+      wrap.appendChild(buildExpandPanel(nombre, p));
+    }
+
+    container.appendChild(wrap);
   }
 }
 
+// ─────────────────────────────────────────────
+//  CARD EXPAND — edición inline de bloques
+// ─────────────────────────────────────────────
+function buildExpandPanel(nombrePatron, patron) {
+  const bloques = Array.isArray(patron.bloquesModal) ? patron.bloquesModal : [];
+  const panel = document.createElement("div");
+  panel.className = "card-expand";
+
+  // Estado local para edición
+  const editBloques = bloques.map(b => ({
+    nombre: b.nombre || "Bloque",
+    paginas: [...(b.paginas || [])],
+    requerimientos: [...(b.requerimientos || [])],
+    meta: b.meta || {}
+  }));
+
+  function render() {
+    panel.innerHTML = "";
+
+    if (!editBloques.length) {
+      panel.innerHTML = `<p style="font-size:12px;color:var(--muted);">Este mapeo no tiene bloques. Usá "Re-mapear" para asignar páginas.</p>`;
+    }
+
+    for (let i = 0; i < editBloques.length; i++) {
+      const b = editBloques[i];
+      const div = document.createElement("div");
+      div.className = "expand-bloque";
+
+      const reqsHtml = b.requerimientos.map((r, ri) => `
+        <span class="req-chip">
+          ${escapeHtml(r)}
+          <button class="req-chip-del" data-bi="${i}" data-ri="${ri}" title="Quitar">×</button>
+        </span>`).join("");
+
+      div.innerHTML = `
+        <div class="expand-bloque-header">
+          <strong>Bloque ${i + 1}</strong>
+          <input type="text" class="edit-nombre" data-i="${i}" value="${escapeHtml(b.nombre)}" />
+        </div>
+        <div class="expand-pags">Páginas: ${b.paginas.length ? b.paginas.join(", ") : "(sin asignar)"}</div>
+        <div class="expand-reqs" id="expand-reqs-${i}">
+          ${reqsHtml}
+          <div class="expand-add-req">
+            <input type="text" class="add-req-input" data-i="${i}" placeholder="Agregar requerimiento…" />
+            <button class="alt sm btn-add-req" data-i="${i}">+</button>
+          </div>
+        </div>`;
+
+      panel.appendChild(div);
+    }
+
+    // Eventos
+    panel.querySelectorAll(".edit-nombre").forEach(inp => {
+      inp.addEventListener("input", () => {
+        editBloques[parseInt(inp.dataset.i)].nombre = inp.value;
+      });
+    });
+
+    panel.querySelectorAll(".req-chip-del").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const bi = parseInt(btn.dataset.bi);
+        const ri = parseInt(btn.dataset.ri);
+        editBloques[bi].requerimientos.splice(ri, 1);
+        render();
+      });
+    });
+
+    panel.querySelectorAll(".btn-add-req").forEach(btn => {
+      btn.addEventListener("click", () => agregarReqInline(parseInt(btn.dataset.i)));
+    });
+
+    panel.querySelectorAll(".add-req-input").forEach(inp => {
+      inp.addEventListener("keydown", e => {
+        if (e.key === "Enter") agregarReqInline(parseInt(inp.dataset.i));
+      });
+    });
+
+    // Botones de acción al final
+    const acciones = document.createElement("div");
+    acciones.className = "expand-actions";
+    acciones.innerHTML = `
+      <button class="alt sm" id="expand-cancelar">Cancelar</button>
+      <button class="green sm" id="expand-guardar">Guardar cambios</button>`;
+    panel.appendChild(acciones);
+
+    panel.querySelector("#expand-cancelar").addEventListener("click", () => {
+      expandedCard = null;
+      renderCards();
+    });
+
+    panel.querySelector("#expand-guardar").addEventListener("click", () => guardarEdicionCard(nombrePatron, editBloques, patron));
+  }
+
+  function agregarReqInline(bi) {
+    const inp = panel.querySelector(`.add-req-input[data-i="${bi}"]`);
+    if (!inp) return;
+    const val = inp.value.trim();
+    if (!val) return;
+    if (!editBloques[bi].requerimientos.includes(val)) {
+      editBloques[bi].requerimientos.push(val);
+    }
+    inp.value = "";
+    render();
+  }
+
+  render();
+  return panel;
+}
+
+async function guardarEdicionCard(nombrePatron, editBloques, patronOriginal) {
+  mostrar("Guardando cambios…", "");
+  try {
+    const bloquesActualizados = editBloques.map(b => ({
+      nombre: b.nombre,
+      paginas: b.paginas,
+      requerimientos: b.requerimientos,
+      meta: b.meta
+    }));
+
+    const payload = {
+      nombre: nombrePatron,
+      bloquesModal: bloquesActualizados,
+      firmaTipos: patronOriginal.firmaTipos || [],
+      totalPaginas: patronOriginal.totalPaginas || 0
+    };
+
+    const r = await chrome.runtime.sendMessage({ action: "storage:guardarPatronSabana", payload });
+    if (!r?.ok) throw new Error(r?.error || "Error guardando");
+
+    mostrar(`"${nombrePatron}" actualizado.`, "ok");
+    expandedCard = null;
+    await cargarPatrones();
+  } catch (e) {
+    mostrar(`Error: ${e.message}`, "err");
+  }
+}
+
+// ─────────────────────────────────────────────
+//  RE-MAPEAR (abre tab Nuevo con patrón pre-cargado)
+// ─────────────────────────────────────────────
+function abrirRemapear(patron) {
+  const bloques = Array.isArray(patron.bloquesModal) ? patron.bloquesModal : [];
+  nuevoModoEdicion = {
+    nombre: patron.nombre,
+    bloquesBase: bloques.map(b => ({
+      nombre: b.nombre || "Bloque",
+      paginas: [],               // sin páginas — usuario re-asigna
+      requerimientos: [...(b.requerimientos || [])],
+      meta: b.meta || {}
+    }))
+  };
+
+  // Pre-llenar nombre
+  document.getElementById("nuevo-nombre").value = patron.nombre || "";
+
+  // Resetear workspace (sin PDF)
+  resetearWorkspace();
+
+  switchTab("nuevo");
+  mostrar(`Cargá el PDF de referencia para re-mapear "${patron.nombre}".`, "");
+}
+
+// ─────────────────────────────────────────────
+//  EXPORTAR / ELIMINAR
+// ─────────────────────────────────────────────
 function exportarPatron(nombre, patron) {
   const datos = {
     version: 1,
@@ -97,26 +340,24 @@ function exportarPatron(nombre, patron) {
     patrones_sabana: [patron],
     mapeos_aprendidos: {}
   };
-  const json = JSON.stringify(datos, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
+  const blob = new Blob([JSON.stringify(datos, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const fecha = new Date().toISOString().slice(0, 10);
-  const nombreArchivo = nombre.replace(/[^a-zA-Z0-9_-]/g, "_");
   a.href = url;
-  a.download = `mapeo-${nombreArchivo}-${fecha}.json`;
+  a.download = `mapeo-${nombre.replace(/[^a-zA-Z0-9_-]/g, "_")}-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
   mostrar(`"${nombre}" exportado.`, "ok");
 }
 
-async function eliminarPatron(nombre, patronesActuales, patronActivo) {
+async function eliminarPatron(nombre) {
   if (!confirm(`¿Eliminar el mapeo "${nombre}"? Esta acción no se puede deshacer.`)) return;
   try {
-    const nuevos = patronesActuales.filter(p => p.nombre !== nombre);
+    const nuevos = patrones.filter(p => p.nombre !== nombre);
     const r = await chrome.runtime.sendMessage({ action: "storage:guardarPatronesSabana", payload: nuevos });
     if (!r?.ok && r !== undefined) throw new Error("No se pudo eliminar.");
     if (patronActivo === nombre) await guardarPatronActivo(null);
+    if (expandedCard === nombre) expandedCard = null;
     mostrar(`"${nombre}" eliminado.`, "ok");
     await cargarPatrones();
   } catch (e) {
@@ -124,21 +365,19 @@ async function eliminarPatron(nombre, patronesActuales, patronActivo) {
   }
 }
 
-document.getElementById("btn-crear").addEventListener("click", () => {
-  chrome.tabs.create({ url: "https://controldocumentario.com" });
-});
-
+// ─────────────────────────────────────────────
+//  IMPORTAR
+// ─────────────────────────────────────────────
 document.getElementById("btn-importar").addEventListener("click", () => {
   document.getElementById("input-importar").click();
 });
 
-document.getElementById("input-importar").addEventListener("change", async (e) => {
+document.getElementById("input-importar").addEventListener("change", async e => {
   const file = e.target.files?.[0];
   if (!file) return;
   try {
     mostrar("Importando mapeo…", "");
-    const texto = await file.text();
-    const datos = JSON.parse(texto);
+    const datos = JSON.parse(await file.text());
     const r = await chrome.runtime.sendMessage({ action: "storage:importarMapeo", payload: datos });
     if (!r?.ok) throw new Error(r?.error || "No se pudo importar.");
     mostrar(`Importado: ${r.data.patrones} patrón(es), ${r.data.mapeos} mapeo(s).`, "ok");
@@ -149,16 +388,407 @@ document.getElementById("input-importar").addEventListener("change", async (e) =
   e.target.value = "";
 });
 
+// ─────────────────────────────────────────────
+//  MAPPEAR NUEVO — setup de controles
+// ─────────────────────────────────────────────
+const dropzone = document.getElementById("nuevo-dropzone");
+const fileInput = document.getElementById("nuevo-file-input");
+
+document.getElementById("nuevo-btn-pdf").addEventListener("click", () => fileInput.click());
+document.getElementById("ws-cambiar-pdf").addEventListener("click", () => {
+  resetearWorkspace();
+  fileInput.click();
+});
+
+fileInput.addEventListener("change", () => {
+  const f = fileInput.files?.[0];
+  if (f) cargarPDF(f);
+  fileInput.value = "";
+});
+
+// Drag & drop en el dropzone
+dropzone.addEventListener("click", () => fileInput.click());
+
+dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("dragover"); });
+dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+dropzone.addEventListener("drop", e => {
+  e.preventDefault();
+  dropzone.classList.remove("dragover");
+  const f = e.dataTransfer.files?.[0];
+  if (f && /\.pdf$/i.test(f.name)) cargarPDF(f);
+  else if (f) mostrar("Solo se aceptan archivos PDF.", "err");
+});
+
+document.getElementById("ws-crear-bloque").addEventListener("click", crearBloqueConSeleccion);
+document.getElementById("ws-btn-guardar").addEventListener("click", guardarNuevoMapeo);
+
+// ─────────────────────────────────────────────
+//  CARGAR PDF → renderizar thumbnails
+// ─────────────────────────────────────────────
+async function cargarPDF(file) {
+  nuevoFile = file;
+  nuevoSeleccion.clear();
+  nuevoBloques = [];
+
+  // Si venimos de re-mapear, pre-cargar los bloques base (sin páginas)
+  if (nuevoModoEdicion?.bloquesBase?.length) {
+    nuevoBloques = nuevoModoEdicion.bloquesBase.map((b, i) => ({
+      id: i + 1,
+      nombre: b.nombre,
+      paginas: [],
+      requerimientos: [...b.requerimientos],
+      meta: { ...b.meta }
+    }));
+  }
+
+  // Mostrar workspace, ocultar dropzone
+  dropzone.style.display = "none";
+  const workspace = document.getElementById("nuevo-workspace");
+  workspace.style.display = "flex";
+
+  document.getElementById("ws-filename").textContent = file.name;
+  setWsStatus("Renderizando páginas…");
+  document.getElementById("ws-crear-bloque").disabled = true;
+
+  renderBloques();
+
+  try {
+    // Convertir File a base64 para enviar al background
+    const ab = await file.arrayBuffer();
+    const b64 = btoa(String.fromCharCode(...new Uint8Array(ab)));
+
+    const r = await chrome.runtime.sendMessage({
+      action: "mapeos:renderThumbnails",
+      payload: { base64: b64, escala: 1.0 }
+    });
+
+    if (!r?.ok) throw new Error(r?.error || "Error renderizando PDF");
+
+    nuevoImagenes = Array.isArray(r.data) ? r.data : [];
+    if (!nuevoImagenes.length) throw new Error("No se renderizó ninguna página.");
+
+    setWsStatus(`${nuevoImagenes.length} páginas cargadas`);
+    renderThumbs();
+    renderBloques();
+
+  } catch (e) {
+    setWsStatus("Error: " + e.message);
+    mostrar("No se pudo renderizar el PDF. Asegurate de tener una pestaña de controldocumentario.com abierta.", "err");
+  }
+}
+
+function setWsStatus(msg) {
+  document.getElementById("ws-status").textContent = msg;
+}
+
+function resetearWorkspace() {
+  nuevoFile = null;
+  nuevoImagenes = [];
+  nuevoSeleccion.clear();
+  nuevoBloques = [];
+  nuevoUltimoClic = null;
+
+  dropzone.style.display = "flex";
+  document.getElementById("nuevo-workspace").style.display = "none";
+  document.getElementById("ws-thumbs-grid").innerHTML = "";
+  document.getElementById("ws-bloques-list").innerHTML = "";
+  document.getElementById("ws-sel-info").textContent = "Seleccioná páginas a la izquierda";
+  document.getElementById("ws-crear-bloque").disabled = true;
+  document.getElementById("ws-save-status").textContent = "";
+  document.getElementById("ws-save-status").className = "ws-save-status";
+
+  if (!nuevoModoEdicion) {
+    document.getElementById("nuevo-nombre").value = "";
+  }
+}
+
+// ─────────────────────────────────────────────
+//  THUMBNAILS
+// ─────────────────────────────────────────────
+function renderThumbs() {
+  const grid = document.getElementById("ws-thumbs-grid");
+  grid.innerHTML = "";
+
+  for (const { pagina, base64 } of nuevoImagenes) {
+    const div = document.createElement("div");
+    div.className = "thumb";
+    div.dataset.pagina = pagina;
+
+    const img = document.createElement("img");
+    img.src = `data:image/jpeg;base64,${base64}`;
+    img.alt = `Página ${pagina}`;
+
+    const num = document.createElement("span");
+    num.className = "thumb-num";
+    num.textContent = pagina;
+
+    const tag = document.createElement("div");
+    tag.className = "thumb-tag";
+    tag.textContent = "";
+
+    div.appendChild(num);
+    div.appendChild(img);
+    div.appendChild(tag);
+
+    div.addEventListener("click", e => manejarClicThumb(e, pagina));
+    grid.appendChild(div);
+  }
+
+  refrescarThumbsVisual();
+}
+
+function manejarClicThumb(e, pagina) {
+  if (e.shiftKey && nuevoUltimoClic != null) {
+    const desde = Math.min(nuevoUltimoClic, pagina);
+    const hasta = Math.max(nuevoUltimoClic, pagina);
+    for (let i = desde; i <= hasta; i++) nuevoSeleccion.add(i);
+  } else if (e.ctrlKey || e.metaKey) {
+    if (nuevoSeleccion.has(pagina)) nuevoSeleccion.delete(pagina);
+    else nuevoSeleccion.add(pagina);
+  } else {
+    // toggle simple
+    if (nuevoSeleccion.has(pagina)) nuevoSeleccion.delete(pagina);
+    else nuevoSeleccion.add(pagina);
+  }
+  nuevoUltimoClic = pagina;
+  refrescarThumbsVisual();
+  actualizarInfoSeleccion();
+}
+
+function refrescarThumbsVisual() {
+  document.querySelectorAll(".thumb").forEach(el => {
+    const pag = parseInt(el.dataset.pagina, 10);
+    const sel = nuevoSeleccion.has(pag);
+    el.classList.toggle("selected", sel);
+
+    const bloquesDeEsta = nuevoBloques.filter(b => b.paginas.includes(pag));
+    el.classList.toggle("assigned", bloquesDeEsta.length > 0 && !sel);
+
+    const tag = el.querySelector(".thumb-tag");
+    if (bloquesDeEsta.length > 0) {
+      tag.textContent = bloquesDeEsta.map(b => b.nombre).join(" · ");
+      tag.style.color = "var(--green)";
+    } else {
+      tag.textContent = "";
+      tag.style.color = "";
+    }
+  });
+}
+
+function actualizarInfoSeleccion() {
+  const n = nuevoSeleccion.size;
+  document.getElementById("ws-sel-info").textContent =
+    n === 0
+      ? "Seleccioná páginas a la izquierda"
+      : `${n} página(s) seleccionada(s): ${[...nuevoSeleccion].sort((a, b) => a - b).join(", ")}`;
+  document.getElementById("ws-crear-bloque").disabled = n === 0;
+}
+
+// ─────────────────────────────────────────────
+//  BLOQUES
+// ─────────────────────────────────────────────
+function siguienteId() {
+  const usados = new Set(nuevoBloques.map(b => b.id));
+  let n = 1;
+  while (usados.has(n)) n++;
+  return n;
+}
+
+function crearBloqueConSeleccion() {
+  if (!nuevoSeleccion.size) return;
+  const paginas = [...nuevoSeleccion].sort((a, b) => a - b);
+  nuevoBloques.push({
+    id: siguienteId(),
+    nombre: `Bloque ${siguienteId()}`,
+    paginas,
+    requerimientos: []
+  });
+  nuevoSeleccion.clear();
+  refrescarThumbsVisual();
+  actualizarInfoSeleccion();
+  renderBloques();
+}
+
+function renderBloques() {
+  const lista = document.getElementById("ws-bloques-list");
+  lista.innerHTML = "";
+
+  if (!nuevoBloques.length) {
+    lista.innerHTML = `<div style="font-size:11px;color:var(--muted);padding:4px 0;">Seleccioná páginas y apretá "+ Crear bloque".</div>`;
+    return;
+  }
+
+  for (const b of nuevoBloques) {
+    const div = document.createElement("div");
+    div.className = "ws-bloque";
+    div.dataset.id = b.id;
+
+    const activo = b.paginas.some(p => nuevoSeleccion.has(p));
+    if (activo) div.classList.add("active");
+
+    const reqsHtml = b.requerimientos.map((r, ri) => `
+      <span class="req-chip" style="font-size:11px;">
+        ${escapeHtml(r)}
+        <button class="req-chip-del" data-bid="${b.id}" data-ri="${ri}" title="Quitar">×</button>
+      </span>`).join("");
+
+    div.innerHTML = `
+      <div class="ws-bloque-header">
+        <strong>#${b.id}</strong>
+        <input type="text" class="bloque-nombre" data-bid="${b.id}" value="${escapeHtml(b.nombre)}" />
+        <button class="ws-bloque-del" data-bid="${b.id}" title="Eliminar bloque">✕</button>
+      </div>
+      <div class="ws-pags">${b.paginas.length ? "Páginas: " + b.paginas.join(", ") : "Sin páginas asignadas"}</div>
+      <div class="ws-reqs-label">Requerimientos:</div>
+      <div class="ws-reqs-chips">${reqsHtml}</div>
+      <div class="ws-add-req">
+        <input type="text" class="bloque-add-req" data-bid="${b.id}" placeholder="Nombre del requerimiento…" />
+        <button class="alt sm bloque-btn-add-req" data-bid="${b.id}">+</button>
+      </div>`;
+
+    lista.appendChild(div);
+  }
+
+  // Eventos
+  lista.querySelectorAll(".bloque-nombre").forEach(inp => {
+    inp.addEventListener("input", () => {
+      const b = nuevoBloques.find(x => x.id === parseInt(inp.dataset.bid));
+      if (b) { b.nombre = inp.value; refrescarThumbsVisual(); }
+    });
+  });
+
+  lista.querySelectorAll(".ws-bloque-del").forEach(btn => {
+    btn.addEventListener("click", () => {
+      nuevoBloques = nuevoBloques.filter(x => x.id !== parseInt(btn.dataset.bid));
+      renderBloques();
+      refrescarThumbsVisual();
+    });
+  });
+
+  lista.querySelectorAll(".req-chip-del").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const b = nuevoBloques.find(x => x.id === parseInt(btn.dataset.bid));
+      if (b) {
+        b.requerimientos.splice(parseInt(btn.dataset.ri), 1);
+        renderBloques();
+      }
+    });
+  });
+
+  lista.querySelectorAll(".bloque-btn-add-req").forEach(btn => {
+    btn.addEventListener("click", () => agregarReqBloque(parseInt(btn.dataset.bid)));
+  });
+
+  lista.querySelectorAll(".bloque-add-req").forEach(inp => {
+    inp.addEventListener("keydown", e => {
+      if (e.key === "Enter") agregarReqBloque(parseInt(inp.dataset.bid));
+    });
+  });
+}
+
+function agregarReqBloque(bid) {
+  const inp = document.querySelector(`.bloque-add-req[data-bid="${bid}"]`);
+  if (!inp) return;
+  const val = inp.value.trim();
+  if (!val) return;
+  const b = nuevoBloques.find(x => x.id === bid);
+  if (b && !b.requerimientos.includes(val)) {
+    b.requerimientos.push(val);
+    renderBloques();
+  }
+  inp.value = "";
+}
+
+// ─────────────────────────────────────────────
+//  GUARDAR NUEVO MAPEO
+// ─────────────────────────────────────────────
+async function guardarNuevoMapeo() {
+  const nombre = document.getElementById("nuevo-nombre").value.trim();
+  const saveStatus = document.getElementById("ws-save-status");
+
+  if (!nombre) {
+    mostrar("Ingresá un nombre para el mapeo.", "err");
+    document.getElementById("nuevo-nombre").focus();
+    return;
+  }
+  if (!nuevoBloques.length) {
+    mostrar("Armá al menos un bloque antes de guardar.", "err");
+    return;
+  }
+  const bloquesSinPags = nuevoBloques.filter(b => !b.paginas.length);
+  if (bloquesSinPags.length) {
+    if (!confirm(`${bloquesSinPags.length} bloque(s) no tienen páginas asignadas y se ignorarán. ¿Continuar?`)) return;
+  }
+
+  const bloquesValidos = nuevoBloques.filter(b => b.paginas.length > 0);
+
+  saveStatus.textContent = "Guardando patrón…";
+  saveStatus.className = "ws-save-status";
+
+  try {
+    // 1) Guardar patrón en chrome.storage
+    const totalPaginas = nuevoImagenes.length;
+    const r1 = await chrome.runtime.sendMessage({
+      action: "storage:guardarPatronSabana",
+      payload: {
+        nombre,
+        bloquesModal: bloquesValidos,
+        firmaTipos: [],
+        totalPaginas
+      }
+    });
+    if (!r1?.ok) throw new Error(r1?.error || "No se pudo guardar el patrón.");
+
+    // 2) Guardar imágenes de referencia en remoto
+    saveStatus.textContent = "Subiendo imágenes de referencia…";
+    try {
+      await chrome.runtime.sendMessage({
+        action: "storage:guardarImagenesPatronRemoto",
+        payload: {
+          nombre,
+          imagenes: nuevoImagenes,
+          bloques: bloquesValidos
+        }
+      });
+    } catch (imgErr) {
+      console.warn("[MAU][MAPEOS] No se pudieron subir imágenes remotas:", imgErr);
+    }
+
+    saveStatus.textContent = `"${nombre}" guardado ✓`;
+    saveStatus.className = "ws-save-status ok";
+    mostrar(`Mapeo "${nombre}" guardado correctamente.`, "ok");
+
+    // Limpiar estado de edición
+    nuevoModoEdicion = null;
+
+    // Refrescar lista de Mis Mapeos
+    await cargarPatrones();
+
+    // Ofrecer ir a Mis Mapeos
+    setTimeout(() => switchTab("mis-mapeos"), 1200);
+
+  } catch (e) {
+    saveStatus.textContent = "Error: " + e.message;
+    saveStatus.className = "ws-save-status err";
+    mostrar("Error al guardar: " + e.message, "err");
+  }
+}
+
+// ─────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────
 async function init() {
   try {
     const r = await chrome.runtime.sendMessage({ action: "firebase:status" });
     const loggedIn = !!(r?.ok && r.data?.user);
-    noSesionEl.hidden = loggedIn;
-    contenidoEl.hidden = !loggedIn;
+    document.getElementById("no-sesion").style.display = loggedIn ? "none" : "flex";
+    document.getElementById("tab-mis-mapeos").style.display = loggedIn ? "" : "none";
+    document.getElementById("tab-nuevo").style.display = loggedIn ? "" : "none";
+    document.querySelector('.tabs-nav').style.display = loggedIn ? "" : "none";
     if (loggedIn) await cargarPatrones();
-  } catch (_) {
-    noSesionEl.hidden = false;
-    contenidoEl.hidden = true;
+  } catch {
+    document.getElementById("no-sesion").style.display = "flex";
+    document.querySelector('.tabs-nav').style.display = "none";
   }
 }
 

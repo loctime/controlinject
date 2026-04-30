@@ -2,7 +2,7 @@ const admin = require("firebase-admin");
 const serviceAccount = require("./serviceAccountKey-controlfile.json");
 
 // ─── EDITAR ESTOS CAMPOS ───────────────────────────────────────────────────
-const EMAIL = "diegobertosi@gmail.com";
+const EMAIL = "licvidalfernando@gmail.com";
 const PASSWORD = "123123123";
 // ──────────────────────────────────────────────────────────────────────────
 

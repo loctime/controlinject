@@ -631,6 +631,13 @@ async function manejarMensaje(mensaje) {
     return { cleared: true };
   }
 
+  if (accion === "mapeos:renderThumbnails") {
+    const base64 = mensaje?.payload?.base64;
+    const escala = parseFloat(mensaje?.payload?.escala) || 1.0;
+    if (!base64) throw new Error("Falta el PDF (base64).");
+    return await renderPdfParaMapeos(base64, escala);
+  }
+
   if (accion === "storage:exportarMapeo") {
     const data = await chrome.storage.local.get([KEY_PATRONES_SABANA, KEY_MAPEOS]);
     return {
@@ -1804,6 +1811,63 @@ async function tgRenderPdfEnImagenes(base64Pdf, tabIdExterno) {
         return out;
       },
       args: [base64Pdf]
+    });
+    return Array.isArray(result) ? result : [];
+  } finally {
+    if (abrimosNosotros) {
+      try { await chrome.tabs.remove(tabId); } catch {}
+    }
+  }
+}
+
+/**
+ * Renderiza páginas de un PDF a JPEG en un tab de controldocumentario.com.
+ * Usada por mapeos.html para mostrar thumbnails y guardar imágenes de referencia.
+ * @param {string} base64Pdf - PDF codificado en base64
+ * @param {number} escala - Escala de renderizado (default 1.0)
+ * @returns {Promise<Array<{pagina:number, base64:string}>>}
+ */
+async function renderPdfParaMapeos(base64Pdf, escala = 1.0) {
+  const { tabId, abrimosNosotros } = await tgConseguirTabControldoc();
+  try {
+    const [{ result } = {}] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: async (b64, scale) => {
+        if (!window.pdfjsLib) {
+          await new Promise((resolve, reject) => {
+            const s = document.createElement("script");
+            s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+            s.onload = resolve;
+            s.onerror = () => reject(new Error("No pude cargar pdf.js"));
+            document.head.appendChild(s);
+          });
+          if (window.pdfjsLib?.GlobalWorkerOptions) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+              "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+          }
+        }
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const pdf = await window.pdfjsLib.getDocument({ data: bytes }).promise;
+        const out = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.floor(viewport.width);
+          canvas.height = Math.floor(viewport.height);
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          out.push({ pagina: i, base64: canvas.toDataURL("image/jpeg", 0.82).split(",")[1] });
+        }
+        try { pdf.destroy(); } catch {}
+        return out;
+      },
+      args: [base64Pdf, escala]
     });
     return Array.isArray(result) ? result : [];
   } finally {
