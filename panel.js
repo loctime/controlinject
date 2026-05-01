@@ -2303,8 +2303,15 @@
         if (entidadesMeta.length) {
           const matcheados = candidatos.filter((r) => {
             const nombreEntidad = [r.recurso?.apellido, r.recurso?.nombre].filter(Boolean).join(" ");
-            const patenteEntidad = extraerPatenteDeTexto(r.nombre);
-            const claves = [normalizarEntidadClave(nombreEntidad), normalizarEntidadClave(patenteEntidad)].filter(Boolean);
+            // Buscar patente en el nombre del requerimiento Y en el texto completo del recurso
+            // (para vehículos, la patente aparece en la columna del recurso, no en el nombre del requerimiento)
+            const patenteEnReq = extraerPatenteDeTexto(r.nombre);
+            const patenteEnRecurso = extraerPatenteDeTexto(r.recurso?.textoCompleto || "");
+            const claves = [
+              normalizarEntidadClave(nombreEntidad),
+              normalizarEntidadClave(patenteEnReq),
+              normalizarEntidadClave(patenteEnRecurso)
+            ].filter(Boolean);
             return claves.some((k) => entidadesMeta.some((m) => esEntidadCompatible(k, m)));
           });
           if (matcheados.length) {
