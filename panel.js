@@ -53,17 +53,61 @@
     el.title = email || "";
   }
 
-  async function verificarSesion() {
+  let sesionCheckInterval = null;
+
+  async function verificarSesion(forzarLogin = false) {
     try {
       const r = await window.MAUStorage.firebaseStatus();
       const loggedIn = !!(r?.user);
+      
+      if (!loggedIn && forzarLogin) {
+        // Forzar login si no hay sesión
+        if (ui.loginScreen) ui.loginScreen.hidden = false;
+        if (ui.modoTrabajar) ui.modoTrabajar.hidden = true;
+        mostrarEmailHeader("");
+        throw new Error("Debe iniciar sesión para usar la extensión");
+      }
+      
       if (ui.loginScreen) ui.loginScreen.hidden = loggedIn;
       if (ui.modoTrabajar) ui.modoTrabajar.hidden = !loggedIn;
       mostrarEmailHeader(loggedIn ? (r.user.email || "") : "");
-    } catch (_) {
+      
+      return loggedIn;
+    } catch (error) {
+      console.warn("[MAU] Error verificando sesión:", error);
       if (ui.loginScreen) ui.loginScreen.hidden = false;
       if (ui.modoTrabajar) ui.modoTrabajar.hidden = true;
       mostrarEmailHeader("");
+      
+      if (forzarLogin) {
+        mostrarToast("⚠️ Debe iniciar sesión para continuar");
+      }
+      return false;
+    }
+  }
+
+  // Iniciar verificación periódica de sesión
+  function iniciarVerificacionPeriodica() {
+    if (sesionCheckInterval) clearInterval(sesionCheckInterval);
+    
+    sesionCheckInterval = setInterval(async () => {
+      const loggedIn = await verificarSesion(false);
+      if (!loggedIn && !ui.loginScreen.hidden) {
+        // Si no está logueado y ya está mostrando login, no hacer nada
+        return;
+      }
+      if (!loggedIn && !ui.loginScreen.hidden) {
+        console.log("[MAU] Sesión expirada, mostrando login");
+        mostrarToast("⚠️ La sesión ha expirado. Por favor, inicie sesión nuevamente.");
+      }
+    }, 30000); // Verificar cada 30 segundos
+  }
+
+  // Detener verificación periódica
+  function detenerVerificacionPeriodica() {
+    if (sesionCheckInterval) {
+      clearInterval(sesionCheckInterval);
+      sesionCheckInterval = null;
     }
   }
 
@@ -79,6 +123,9 @@
       ui.loginScreen.hidden = true;
       ui.modoTrabajar.hidden = false;
       mostrarEmailHeader(loginResult?.user?.email || email);
+      // Iniciar verificación periódica después del login exitoso
+      iniciarVerificacionPeriodica();
+      mostrarToast("✅ Sesión iniciada correctamente");
     } catch (e) {
       if (ui.loginError) ui.loginError.textContent = e.message;
     } finally {
@@ -96,6 +143,9 @@
       ui.loginScreen.hidden = true;
       ui.modoTrabajar.hidden = false;
       mostrarEmailHeader(googleResult?.user?.email || "");
+      // Iniciar verificación periódica después del login exitoso
+      iniciarVerificacionPeriodica();
+      mostrarToast("✅ Sesión iniciada correctamente");
     } catch (e) {
       if (ui.loginError) ui.loginError.textContent = e.message;
     } finally {
@@ -146,7 +196,13 @@
     ui.dropzone.addEventListener("drop", manejarDrop);
   }
   instalarBloqueoGlobalDrop();
-  verificarSesion();
+  
+  // Verificar sesión inicial y iniciar verificación periódica si ya está logueado
+  verificarSesion().then(loggedIn => {
+    if (loggedIn) {
+      iniciarVerificacionPeriodica();
+    }
+  });
 
   /**
    * Detecta el índice de la columna "Recurso" a partir de los headers de la tabla.
@@ -452,12 +508,26 @@
 
   async function procesarArchivosPdf(archivos, origen) {
     console.log(`[MAU] [TRABAJAR] Procesando ${archivos.length} PDF(s). Origen: ${origen}`);
+    
+    // VERIFICACIÓN OBLIGATORIA DE SESIÓN
+    const loggedIn = await verificarSesion(true);
+    if (!loggedIn) {
+      mostrarToast("⚠️ Debe iniciar sesión para procesar archivos");
+      return;
+    }
+    
     if (!estado.requerimientos.length) await detectarRequerimientosPendientes();
 
     try {
       await window.MAUStorage.syncDownFirebase();
     } catch (e) {
       console.warn("[MAU][TRABAJAR] No se pudo sincronizar desde backend, se usa caché local.", e);
+      // Si no hay sincronización, verificar que tengamos datos locales
+      const patrones = (await window.MAUStorage.leerPatronesSabana()) || [];
+      if (!patrones.length) {
+        mostrarToast("❌ No hay mapeos disponibles y no se pudo sincronizar. Inicie sesión nuevamente.");
+        return;
+      }
     }
 
     const patrones = (await window.MAUStorage.leerPatronesSabana()) || [];

@@ -142,8 +142,21 @@ async function fbGetValidAuth() {
   const auth = await fbGetAuth();
   if (!auth) return null;
   const now = Date.now();
-  if (!auth.expiresAt || auth.expiresAt <= now + 60000) {
-    if (!auth.refreshToken) return null;
+  
+  // Token válido por más de 5 minutos, retornar directamente
+  if (auth.expiresAt && auth.expiresAt > now + 5 * 60 * 1000) {
+    return auth;
+  }
+  
+  // Token expirado o por expirar, intentar refresh
+  if (!auth.refreshToken) {
+    console.warn("[MAU] Token expirado sin refreshToken, limpiando sesión");
+    await fbClearAuth();
+    return null;
+  }
+  
+  try {
+    console.log("[MAU] Refrescando token Firebase...");
     const refreshed = await fbRefreshIdToken(auth.refreshToken);
     const merged = {
       ...auth,
@@ -151,9 +164,14 @@ async function fbGetValidAuth() {
       expiresAt: now + 55 * 60 * 1000
     };
     await fbSetAuth(merged);
+    console.log("[MAU] Token refrescado exitosamente");
     return merged;
+  } catch (error) {
+    console.error("[MAU] Error al refrescar token:", error);
+    // Si falla el refresh, limpiar la sesión
+    await fbClearAuth();
+    return null;
   }
-  return auth;
 }
 
 async function fbLoginEmail(email, password) {
@@ -379,9 +397,12 @@ async function cfSubirReferenciaPatronRemoto(payload) {
   const fileName = `referencia-${normalizarSegmentoPath(nombre)}.json`;
   const res = await fetch(`${baseUrl}${CF_UPLOAD_MAPPING_PATH}`, {
     method: "POST",
+    mode: "cors",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${auth.idToken}`
+      "Authorization": `Bearer ${auth.idToken}`,
+      "Accept": "application/json",
+      "Cache-Control": "no-cache"
     },
     body: JSON.stringify({
       appId: "controlinject",
@@ -438,7 +459,11 @@ async function cfDescargarReferenciaPatronRemoto(nombrePatron, ref = null) {
   }
   if (!fileId) return null;
   const res = await fetch(`${baseUrl}${CF_DOWNLOAD_MAPPING_PATH}?fileId=${encodeURIComponent(fileId)}`, {
-    headers: { Authorization: `Bearer ${auth.idToken}` }
+    mode: "cors",
+    headers: { 
+      "Authorization": `Bearer ${auth.idToken}`,
+      "Accept": "application/json"
+    }
   });
   if (!res.ok) throw new Error(`No se pudo descargar referencia remota (${res.status}).`);
   const data = await res.json();
@@ -461,9 +486,11 @@ async function cfEliminarReferenciaPatronRemoto(nombrePatron) {
 
   const res = await fetch(`${baseUrl}${CF_DELETE_MAPPING_PATH}`, {
     method: "POST",
+    mode: "cors",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${auth.idToken}`
+      "Authorization": `Bearer ${auth.idToken}`,
+      "Accept": "application/json"
     },
     body: JSON.stringify({
       appId: "controlinject",

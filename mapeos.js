@@ -1420,21 +1420,63 @@ async function guardarNuevoMapeo() {
 // ─────────────────────────────────────────────
 //  INIT
 // ─────────────────────────────────────────────
-async function init() {
+let sesionCheckInterval = null;
+
+async function verificarSesion() {
   try {
     const r = await chrome.runtime.sendMessage({ action: "firebase:status" });
     const loggedIn = !!(r?.ok && r.data?.user);
+    
+    // Actualizar UI según estado de sesión
     document.getElementById("no-sesion").style.display = loggedIn ? "none" : "flex";
     document.getElementById("tab-mis-mapeos").style.display = loggedIn ? "" : "none";
     document.getElementById("tab-nuevo").style.display = loggedIn ? "" : "none";
     document.querySelector('.tabs-nav').style.display = loggedIn ? "" : "none";
+    
     if (loggedIn) {
       await cargarPatrones({ sync: true });
       cargarSobres(); // sin await — no bloquea la carga
+    } else {
+      // Limpiar datos si no hay sesión
+      patrones = [];
+      patronActivo = null;
+      if (typeof renderListado === 'function') renderListado();
     }
-  } catch {
+    
+    return loggedIn;
+  } catch (error) {
+    console.error("[MAU] Error verificando sesión en mapeos:", error);
     document.getElementById("no-sesion").style.display = "flex";
     document.querySelector('.tabs-nav').style.display = "none";
+    return false;
+  }
+}
+
+// Iniciar verificación periódica de sesión
+function iniciarVerificacionPeriodica() {
+  if (sesionCheckInterval) clearInterval(sesionCheckInterval);
+  
+  sesionCheckInterval = setInterval(async () => {
+    const loggedIn = await verificarSesion();
+    if (!loggedIn) {
+      console.log("[MAU] Sesión expirada en página de mapeos");
+      // Mostrar mensaje de sesión expirada si el usuario estaba trabajando
+      const noSesionEl = document.getElementById("no-sesion");
+      if (noSesionEl && noSesionEl.style.display !== "flex") {
+        const mensajeEl = noSesionEl.querySelector(".mensaje");
+        if (mensajeEl) {
+          mensajeEl.innerHTML = "Tu sesión ha expirado.<br>Por favor, <a href='panel.html'>inicia sesión nuevamente</a> para continuar.";
+        }
+      }
+    }
+  }, 30000); // Verificar cada 30 segundos
+}
+
+async function init() {
+  const loggedIn = await verificarSesion();
+  
+  if (loggedIn) {
+    iniciarVerificacionPeriodica();
   }
 }
 

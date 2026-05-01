@@ -17,9 +17,11 @@
     "https://identitytoolkit.googleapis.com/*",
     "https://securetoken.googleapis.com/*",
     "https://firestore.googleapis.com/*",
+    "https://controlfile.onrender.com/*",
     "https://*.run.app/*",
     "https://*.cloudfunctions.net/*",
-    "https://*.vercel.app/*"
+    "https://*.vercel.app/*",
+    "https://*.render.com/*"
   ],
   "background": {
     "service_worker": "background.js",
