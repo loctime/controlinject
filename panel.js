@@ -127,21 +127,24 @@
     ui.fileInput.value = "";
   });
 
-  ["dragenter", "dragover"].forEach((evt) =>
-    ui.dropzone.addEventListener(evt, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      ui.dropzone.classList.add("mau-over");
-    })
-  );
-  ["dragleave", "drop"].forEach((evt) =>
-    ui.dropzone.addEventListener(evt, (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      ui.dropzone.classList.remove("mau-over");
-    })
-  );
-  ui.dropzone.addEventListener("drop", manejarDrop);
+  // Configurar drag & drop solo si existe el dropzone
+  if (ui.dropzone) {
+    ["dragenter", "dragover"].forEach((evt) =>
+      ui.dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        ui.dropzone.classList.add("mau-over");
+      })
+    );
+    ["dragleave", "drop"].forEach((evt) =>
+      ui.dropzone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        ui.dropzone.classList.remove("mau-over");
+      })
+    );
+    ui.dropzone.addEventListener("drop", manejarDrop);
+  }
   instalarBloqueoGlobalDrop();
   verificarSesion();
 
@@ -309,6 +312,13 @@
   // Extrae todos los requerimientos de las filas de la tabla, sin filtrar por estado.
   // Devuelve Map<"nombre||apellido" → {nombre, link, recurso, ts}>
   function escanearFilasTabla(idxRecurso) {
+    // Evitar escanear si DataTables está procesando (clase processing)
+    const tabla = document.querySelector("table");
+    if (tabla?.classList.contains("processing")) {
+      console.log("[MAU] DataTables está procesando, esperando...");
+      return new Map();
+    }
+    
     const candidatos = Array.from(document.querySelectorAll("tr")).filter((tr) => {
       const directTds = tr.querySelectorAll(":scope > td");
       return directTds.length >= 4 && !tr.querySelector("table");
@@ -348,7 +358,7 @@
     let mapaTabla = new Map();
     let intentosTabla = 0;
     while (intentosTabla < 6) {
-      await dormir(600);
+      await dormir(1200);
       mapaTabla = escanearFilasTabla(idxRecurso);
       const conRecurso = Array.from(mapaTabla.values()).filter((e) => e?.recurso?.apellido).length;
       console.log(`[MAU] Filas en tabla (sin filtro estado): ${mapaTabla.size} (con recurso: ${conRecurso}) intento=${intentosTabla + 1}/6`);

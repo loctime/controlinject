@@ -37,9 +37,12 @@
       <p class="mau-modo-hint">Subí cualquier documento (recibos, comprobantes, etc.). Claude lo identifica y lo asigna
         al requerimiento correcto usando el mapeo guardado.</p>
 
-            <div class="mau-actions">
-        <button id="mau-seleccionar" class="mau-btn mau-btn-secondary">Seleccionar archivos</button>
-        <input id="mau-file-input" type="file" accept="application/pdf,.pdf" multiple hidden />
+      <div id="mau-dropzone" class="mau-dropzone" style="border: 2px dashed rgba(148,163,184,.3); border-radius: 8px; padding: 20px; text-align: center; margin: 10px 0; transition: all 0.2s;">
+        <p style="color: #94a3b8; margin: 0; font-size: 13px;">Arrastrá archivos PDF aquí o</p>
+        <div class="mau-actions" style="margin-top: 12px;">
+          <button id="mau-seleccionar" class="mau-btn mau-btn-secondary">Seleccionar archivos</button>
+          <input id="mau-file-input" type="file" accept="application/pdf,.pdf" multiple hidden />
+        </div>
       </div>
       <div class="mau-actions">
         <button id="mau-detectar" class="mau-btn">Detectar requerimientos pendientes</button>
