@@ -2113,10 +2113,12 @@ Respondé SOLO JSON válido, sin texto extra:
   // El código hace el match fino: CUIL leído por Claude vs CUIL almacenado en cada bloque de referencia
   const normCuil = (s) => String(s || "").replace(/\D/g, "");
 
-  // Usamos el ÍNDICE en bloquesRef como clave única, porque todos los bloques pueden
-  // tener el mismo nombre (ej: "Bloque") cuando el usuario no los renombra en el modal.
-  // Indexar por nombre colapsaría bloques distintos en uno solo.
-  const bloquesMapIdx = new Map(); // key: índice en bloquesRef → { refBloque, paginas }
+  // Clave compuesta: índice del ref + identificador de persona (CUIL o nombre normalizado).
+  // Esto permite que un mismo tipo de bloque (ej: "Recibo de Haberes") genere entradas
+  // separadas cuando el PDF tiene múltiples personas con el mismo tipo de documento.
+  // Antes se usaba solo refIdx como clave, lo que colapsaba todas las páginas de todas
+  // las personas en un único bloque.
+  const bloquesMapIdx = new Map(); // key: `${refIdx}__${personKey}` → { refBloque, paginas }
 
   for (const item of parsed.paginas) {
     if (!item.pagina_nueva) continue;
@@ -2137,22 +2139,25 @@ Respondé SOLO JSON válido, sin texto extra:
     if (refIdx === -1) continue;
     let refBloque = bloquesRef[refIdx];
 
-    // No usamos CUIL/CUIT para reasignar empleados.
-    // El criterio principal es match visual del formulario + nombre completo detectado luego.
     const cuilLeido = normCuil(item.cuil_leido);
+    // Identificador de persona: CUIL (más confiable) o nombre normalizado como fallback.
+    // Si no se puede leer nada, todas las páginas sin identificar van a una entrada "s/d".
+    const apellidoNorm = normalizar(String(item.apellido || "").trim());
+    const personKey = cuilLeido || apellidoNorm || "s/d";
+    const mapKey = `${refIdx}__${personKey}`;
 
-    console.log(`[MAU] Pág ${item.pagina_nueva} → Ref ${refIdx+1} "${refBloque.nombre || "Bloque"}" CUIL=${cuilLeido || "(sin cuil)"}`);
-    if (!bloquesMapIdx.has(refIdx)) {
-      bloquesMapIdx.set(refIdx, {
+    console.log(`[MAU] Pág ${item.pagina_nueva} → Ref ${refIdx+1} "${refBloque.nombre || "Bloque"}" CUIL=${cuilLeido || "(sin cuil)"} persona="${personKey}"`);
+    if (!bloquesMapIdx.has(mapKey)) {
+      bloquesMapIdx.set(mapKey, {
         nombre: refBloque.nombre,
         paginas: [],
-        paginasMapeo: (refBloque.paginas || []).length, // cuántas páginas tiene este bloque en el mapeo
+        paginasMapeo: (refBloque.paginas || []).length,
         requerimientos: refBloque.requerimientos || [],
         destino: refBloque.destino || { modo: "uno", entidadesObjetivo: [] },
         meta: {}
       });
     }
-    const metaActual = bloquesMapIdx.get(refIdx).meta || {};
+    const metaActual = bloquesMapIdx.get(mapKey).meta || {};
     const metaNuevo = {
       ...metaActual,
       apellido: metaActual.apellido || String(item.apellido || "").trim(),
@@ -2166,8 +2171,8 @@ Respondé SOLO JSON válido, sin texto extra:
       metaNuevo.entidades_mencionadas = Array.from(new Set([...prev, ...entidadesPag]));
     }
     if (cuilLeido) metaNuevo.cuil = item.cuil_leido;
-    bloquesMapIdx.get(refIdx).meta = metaNuevo;
-    bloquesMapIdx.get(refIdx).paginas.push(item.pagina_nueva);
+    bloquesMapIdx.get(mapKey).meta = metaNuevo;
+    bloquesMapIdx.get(mapKey).paginas.push(item.pagina_nueva);
   }
 
   // Validar que cada bloque encontrado tiene TODAS las páginas que dice el mapeo.

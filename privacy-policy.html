@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Política de Privacidad — ControlBun</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+  :root {
+    --green: #00853e;
+    --green-light: #e8f5ee;
+    --dark: #1a1a1a;
+    --mid: #444;
+    --soft: #888;
+    --border: #ddd;
+    --bg: #fafafa;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'IBM Plex Sans', sans-serif;
+    background: var(--bg);
+    color: var(--dark);
+    line-height: 1.7;
+  }
+
+  header {
+    background: var(--green);
+    color: white;
+    padding: 48px 40px 40px;
+    border-bottom: 4px solid #006830;
+  }
+
+  header .label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    opacity: 0.75;
+    margin-bottom: 12px;
+  }
+
+  header h1 {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  header p {
+    font-size: 14px;
+    opacity: 0.85;
+  }
+
+  main {
+    max-width: 740px;
+    margin: 0 auto;
+    padding: 60px 40px 80px;
+  }
+
+  .section {
+    margin-bottom: 48px;
+    padding-bottom: 48px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section:last-child {
+    border-bottom: none;
+  }
+
+  .section-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--green);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--dark);
+    margin-bottom: 16px;
+  }
+
+  p {
+    font-size: 15px;
+    color: var(--mid);
+    margin-bottom: 14px;
+  }
+
+  p:last-child { margin-bottom: 0; }
+
+  ul {
+    margin: 14px 0 14px 20px;
+    color: var(--mid);
+    font-size: 15px;
+  }
+
+  ul li {
+    margin-bottom: 8px;
+  }
+
+  .highlight {
+    background: var(--green-light);
+    border-left: 3px solid var(--green);
+    padding: 16px 20px;
+    border-radius: 0 6px 6px 0;
+    margin: 20px 0;
+  }
+
+  .highlight p {
+    color: var(--dark);
+    font-weight: 400;
+    margin: 0;
+  }
+
+  .tag {
+    display: inline-block;
+    background: var(--green);
+    color: white;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 1px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  footer {
+    text-align: center;
+    padding: 32px;
+    font-size: 13px;
+    color: var(--soft);
+    border-top: 1px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="label">Extensión de Chrome</div>
+  <h1>Política de Privacidad</h1>
+  <p>ControlBun &nbsp;·&nbsp; Última actualización: mayo 2025</p>
+</header>
+
+<main>
+
+  <div class="section">
+    <div class="section-num">01</div>
+    <h2>Qué hace esta extensión</h2>
+    <p>ControlBun es una extensión de Chrome que automatiza la subida de archivos PDF a la plataforma <strong>controldocumentario.com</strong>. Lee los requerimientos pendientes del sitio y adjunta los documentos correspondientes sin necesidad de hacerlo manualmente uno por uno.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-num">02</div>
+    <h2>Qué datos se usan</h2>
+    <p>La extensión trabaja con dos tipos de datos:</p>
+    <ul>
+      <li><strong>Credenciales de acceso:</strong> usuario y contraseña de controldocumentario.com, que el usuario ingresa voluntariamente en las Opciones de la extensión para habilitar el re-login automático.</li>
+      <li><strong>Contenido del sitio:</strong> la extensión lee la lista de requerimientos y documentos pendientes que aparecen en controldocumentario.com para poder procesarlos.</li>
+    </ul>
+    <div class="highlight">
+      <p>🔒 Las credenciales se guardan <strong>únicamente en el almacenamiento local de Chrome en tu PC</strong>. No se envían a ningún servidor externo ni a los desarrolladores de esta extensión.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-num">03</div>
+    <h2>Qué datos NO se recopilan</h2>
+    <p>Esta extensión <strong>no recopila, almacena ni transmite</strong> ninguno de los siguientes datos:</p>
+    <ul>
+      <li>Datos de salud o médicos</li>
+      <li>Información financiera o bancaria</li>
+      <li>Historial de navegación</li>
+      <li>Ubicación geográfica</li>
+      <li>Comunicaciones personales (correos, mensajes)</li>
+      <li>Actividad del usuario fuera de controldocumentario.com</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <div class="section-num">04</div>
+    <h2>Uso de código remoto</h2>
+    <p>La extensión carga las siguientes librerías externas desde CDN para el procesamiento de PDFs:</p>
+    <ul>
+      <li><span class="tag">CDN</span> <strong>pdf.js</strong> — para renderizar y previsualizar páginas de PDF</li>
+      <li><span class="tag">CDN</span> <strong>pdf-lib</strong> — para dividir documentos PDF en partes</li>
+    </ul>
+    <p>Estas librerías se cargan únicamente para procesar archivos localmente. No se transmiten datos de usuario a los servidores de dichas librerías.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-num">05</div>
+    <h2>Transferencia de datos a terceros</h2>
+    <p>No vendemos, transferimos ni compartimos datos de usuarios con terceros bajo ningún concepto. Los datos procesados por la extensión se usan exclusivamente para realizar las acciones que el usuario solicita dentro de controldocumentario.com.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-num">06</div>
+    <h2>Permisos de la extensión</h2>
+    <p>La extensión solicita únicamente los permisos mínimos necesarios para funcionar:</p>
+    <ul>
+      <li><strong>activeTab</strong> — para interactuar con la pestaña activa de controldocumentario.com</li>
+      <li><strong>storage</strong> — para guardar credenciales y configuraciones en tu Chrome local</li>
+      <li><strong>scripting</strong> — para inyectar el panel de automatización en el sitio</li>
+      <li><strong>Host permission</strong> — acceso exclusivo a controldocumentario.com</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <div class="section-num">07</div>
+    <h2>Contacto</h2>
+    <p>Si tenés preguntas sobre esta política de privacidad, podés contactarnos a través del repositorio de la extensión o por los canales habituales de soporte.</p>
+  </div>
+
+</main>
+
+<footer>
+  ControlBun &nbsp;·&nbsp; Política de Privacidad &nbsp;·&nbsp; 2025
+</footer>
+
+</body>
+</html>
