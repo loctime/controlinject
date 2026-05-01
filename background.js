@@ -795,13 +795,7 @@ async function manejarMensaje(mensaje) {
   }
 
   if (accion === "firebase:register") {
-    const email = String(mensaje?.payload?.email || "").trim();
-    const password = String(mensaje?.payload?.password || "");
-    if (!email || !password) throw new Error("Falta email o contraseña.");
-    if (password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
-    const user = await fbRegisterEmail(email, password);
-    try { await fbSyncConfigDown(); } catch (_) {}
-    return { user };
+    throw new Error("El registro de nuevas cuentas está deshabilitado. Contactá al administrador.");
   }
 
   if (accion === "firebase:loginGoogle") {

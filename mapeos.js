@@ -122,12 +122,21 @@ async function guardarPatronActivo(nombre) {
 // ─────────────────────────────────────────────
 //  MIS MAPEOS — carga y render de cards
 // ─────────────────────────────────────────────
-async function cargarPatrones() {
+async function cargarPatrones({ sync = false } = {}) {
+  if (sync) {
+    try {
+      mostrar("Sincronizando mapeos desde Firestore…", "");
+      await chrome.runtime.sendMessage({ action: "firebase:syncDown" });
+    } catch (e) {
+      console.warn("[MAU][MAPEOS] No se pudo sincronizar desde Firestore; se usa caché local.", e);
+    }
+  }
+
   const [r, activo] = await Promise.all([
     chrome.runtime.sendMessage({ action: "storage:leerPatronesSabana" }),
     leerPatronActivo()
   ]);
-  patrones = Array.isArray(r) ? r : [];
+  patrones = Array.isArray(r?.data) ? r.data : (Array.isArray(r) ? r : []);
   patronActivo = activo;
   renderCards();
 }
@@ -1090,7 +1099,7 @@ async function init() {
     document.getElementById("tab-nuevo").style.display = loggedIn ? "" : "none";
     document.querySelector('.tabs-nav').style.display = loggedIn ? "" : "none";
     if (loggedIn) {
-      await cargarPatrones();
+      await cargarPatrones({ sync: true });
       cargarSobres(); // sin await — no bloquea la carga
     }
   } catch {

@@ -92,33 +92,6 @@ document.getElementById("btn-login-email").addEventListener("click", async () =>
   }
 });
 
-document.getElementById("btn-register-email").addEventListener("click", async () => {
-  try {
-    const email = fbEmailEl.value.trim();
-    const password = fbPasswordEl.value;
-    if (!email || !password) throw new Error("Completá email y contraseña.");
-    if (password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
-    mostrar("Creando cuenta…", "");
-    const r = await chrome.runtime.sendMessage({ action: "firebase:register", payload: { email, password } });
-    if (!r?.ok) throw new Error(r?.error || "No se pudo crear la cuenta.");
-    await actualizarUILogin();
-    mostrar("Cuenta creada y sesión iniciada.", "ok");
-  } catch (e) {
-    mostrar(`Error: ${e.message}`, "err");
-  }
-});
-
-document.getElementById("btn-login-google").addEventListener("click", async () => {
-  try {
-    mostrar("Abriendo login de Googleâ€¦", "");
-    const r = await chrome.runtime.sendMessage({ action: "firebase:loginGoogle" });
-    if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesiÃ³n con Google.");
-    await actualizarUILogin();
-    mostrar("SesiÃ³n Google iniciada y datos sincronizados desde la nube.", "ok");
-  } catch (e) {
-    mostrar(`Error: ${e.message}`, "err");
-  }
-});
 
 document.getElementById("btn-logout").addEventListener("click", async () => {
   try {
