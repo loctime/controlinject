@@ -15,7 +15,7 @@ let nuevoImagenes = [];           // [{ pagina, base64 }] — todas las páginas
 let nuevoSeleccion = new Set();
 let nuevoBloques = [];            // [{ id, nombre, paginas, requerimientos }]
 let nuevoUltimoClic = null;
-let nuevoModoEdicion = null;      // { nombre, bloquesBase } si estamos editando un patron existente
+let nuevoModoEdicion = null;      // { nombre, bloquesBase, controlStorageRef }
 let sobresDisponibles = [];       // opciones del cmbSobre de CD
 let nuevoPreviewCache = new Map(); // pagina -> dataUrl en alta resolucion para preview
 
@@ -85,6 +85,45 @@ function formatFecha(ts) {
   if (!ts) return null;
   try { return new Date(ts).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }); }
   catch { return null; }
+}
+
+function mapearBloquesParaWorkspace(bloques = [], { conservarPaginas = false } = {}) {
+  return bloques.map((b, i) => ({
+    id: i + 1,
+    nombre: b.nombre || `Bloque ${i + 1}`,
+    paginas: conservarPaginas ? [...(b.paginas || [])] : [],
+    requerimientos: [...(b.requerimientos || [])],
+    meta: { ...(b.meta || {}) }
+  }));
+}
+
+function abrirWorkspaceConImagenes({ nombre, imagenes, bloques, status, fileLabel }) {
+  nuevoFile = null;
+  nuevoImagenes = Array.isArray(imagenes)
+    ? imagenes
+        .map((img, i) => ({
+          pagina: Number(img?.pagina) || (i + 1),
+          base64: img?.base64 || ""
+        }))
+        .filter(img => img.base64)
+        .sort((a, b) => a.pagina - b.pagina)
+    : [];
+  nuevoSeleccion.clear();
+  nuevoUltimoClic = null;
+  nuevoPreviewCache.clear();
+  nuevoBloques = Array.isArray(bloques) ? bloques : [];
+
+  dropzone.style.display = "none";
+  document.getElementById("nuevo-workspace").style.display = "flex";
+  document.getElementById("ws-filename").textContent = fileLabel || nombre || "Referencia guardada";
+  setWsStatus(status || `${nuevoImagenes.length} página(s) listas`);
+  document.getElementById("ws-crear-bloque").disabled = true;
+  document.getElementById("ws-save-status").textContent = "";
+  document.getElementById("ws-save-status").className = "ws-save-status";
+
+  renderThumbs();
+  renderBloques();
+  actualizarInfoSeleccion();
 }
 
 // ─────────────────────────────────────────────
@@ -189,8 +228,7 @@ function renderCards() {
       </div>
       <div class="card-actions">
         ${!esActivo ? `<button class="alt sm btn-activar" data-nombre="${escapeHtml(nombre)}">Usar</button>` : ""}
-        <button class="alt sm btn-editar" data-nombre="${escapeHtml(nombre)}">${estaExpanded ? "▲ Cerrar" : "✏ Editar"}</button>
-        <button class="sm btn-remapear" data-nombre="${escapeHtml(nombre)}">↺ Re-mapear</button>
+        <button class="sm btn-remapear" data-nombre="${escapeHtml(nombre)}">✏ Editar mapeo</button>
         <button class="alt sm btn-exportar" data-nombre="${escapeHtml(nombre)}">Exportar</button>
         <button class="danger sm btn-eliminar" data-nombre="${escapeHtml(nombre)}">Eliminar</button>
       </div>`;
@@ -200,11 +238,6 @@ function renderCards() {
       await guardarPatronActivo(nombre);
       mostrar(`"${nombre}" marcado como activo.`, "ok");
       await cargarPatrones();
-    });
-
-    card.querySelector(".btn-editar").addEventListener("click", () => {
-      expandedCard = estaExpanded ? null : nombre;
-      renderCards();
     });
 
     card.querySelector(".btn-remapear").addEventListener("click", () => {
@@ -450,28 +483,46 @@ async function guardarEdicionCard(nombrePatron, editBloques, patronOriginal) {
 }
 
 // ─────────────────────────────────────────────
-//  RE-MAPEAR (abre tab Nuevo con patrón pre-cargado)
+//  RE-MAPEAR (abre tab Nuevo con patrón e imágenes pre-cargadas)
 // ─────────────────────────────────────────────
-function abrirRemapear(patron) {
+async function abrirRemapear(patron) {
   const bloques = Array.isArray(patron.bloquesModal) ? patron.bloquesModal : [];
   nuevoModoEdicion = {
     nombre: patron.nombre,
-    bloquesBase: bloques.map(b => ({
-      nombre: b.nombre || "Bloque",
-      paginas: [],               // sin páginas — usuario re-asigna
-      requerimientos: [...(b.requerimientos || [])],
-      meta: b.meta || {}
-    }))
+    controlStorageRef: patron.controlStorageRef || null,
+    bloquesBase: mapearBloquesParaWorkspace(bloques, { conservarPaginas: true })
   };
 
-  // Pre-llenar nombre
   document.getElementById("nuevo-nombre").value = patron.nombre || "";
-
-  // Resetear workspace (sin PDF)
   resetearWorkspace();
-
   switchTab("nuevo");
-  mostrar(`Cargá el PDF de referencia para re-mapear "${patron.nombre}".`, "");
+  mostrar(`Abriendo "${patron.nombre}"…`, "");
+
+  try {
+    const r = await chrome.runtime.sendMessage({
+      action: "storage:descargarImagenesPatronRemoto",
+      payload: {
+        nombre: patron.nombre,
+        controlStorageRef: patron.controlStorageRef || null
+      }
+    });
+    const imagenes = Array.isArray(r?.data?.imagenes) ? r.data.imagenes : [];
+    if (!r?.ok || !imagenes.length) {
+      throw new Error(r?.error || "No se encontraron imágenes guardadas para este mapeo.");
+    }
+
+    abrirWorkspaceConImagenes({
+      nombre: patron.nombre,
+      imagenes,
+      bloques: mapearBloquesParaWorkspace(bloques, { conservarPaginas: true }),
+      fileLabel: `${patron.nombre} · referencia guardada`,
+      status: `${imagenes.length} página(s) restauradas`
+    });
+    mostrar(`"${patron.nombre}" listo para editar.`, "ok");
+  } catch (e) {
+    resetearWorkspace();
+    mostrar(`No se pudo abrir "${patron.nombre}": ${e.message}`, "err");
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -597,13 +648,7 @@ async function cargarPDF(file) {
   nuevoPreviewCache.clear();
 
   if (nuevoModoEdicion?.bloquesBase?.length) {
-    nuevoBloques = nuevoModoEdicion.bloquesBase.map((b, i) => ({
-      id: i + 1,
-      nombre: b.nombre,
-      paginas: [],
-      requerimientos: [...b.requerimientos],
-      meta: { ...b.meta }
-    }));
+    nuevoBloques = mapearBloquesParaWorkspace(nuevoModoEdicion.bloquesBase, { conservarPaginas: false });
   }
 
   dropzone.style.display = "none";
@@ -733,7 +778,15 @@ function renderThumbs() {
 
 async function renderizarPaginaPreview(pagina) {
   if (nuevoPreviewCache.has(pagina)) return nuevoPreviewCache.get(pagina);
-  if (!nuevoFile) throw new Error("No hay PDF cargado.");
+  if (!nuevoFile) {
+    const img = nuevoImagenes.find(x => x.pagina === pagina);
+    if (img?.base64) {
+      const dataUrl = normalizarDataUrlImagen(img.base64);
+      nuevoPreviewCache.set(pagina, dataUrl);
+      return dataUrl;
+    }
+    throw new Error("No hay PDF cargado.");
+  }
 
   if (window.pdfjsLib?.GlobalWorkerOptions) {
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("pdf.worker.min.js");
@@ -1156,7 +1209,7 @@ async function guardarNuevoMapeo() {
 
     // Ofrecer ir a Mis Mapeos
     setTimeout(() => {
-      expandedCard = nombre;
+      expandedCard = null;
       switchTab("mis-mapeos");
       renderCards();
     }, 1200);
