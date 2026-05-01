@@ -1349,11 +1349,13 @@ async function guardarNuevoMapeo() {
 
   try {
     saveStatus.textContent = "Subiendo imágenes de referencia…";
+    const paginasMapeadas = new Set(bloquesValidos.flatMap(b => b.paginas));
+    const imagenesFiltradas = nuevoImagenes.filter(img => paginasMapeadas.has(img.pagina));
     const rImg = await chrome.runtime.sendMessage({
       action: "storage:guardarImagenesPatronRemoto",
       payload: {
         nombre,
-        imagenes: nuevoImagenes,
+        imagenes: imagenesFiltradas,
         bloques: bloquesValidos
       }
     });
@@ -1362,7 +1364,7 @@ async function guardarNuevoMapeo() {
     saveStatus.textContent = "Guardando patrón…";
 
     // 1) Guardar patrón en chrome.storage
-    const totalPaginas = nuevoImagenes.length;
+    const totalPaginas = imagenesFiltradas.length;
     const r1 = await chrome.runtime.sendMessage({
       action: "storage:guardarPatronSabana",
       payload: {
