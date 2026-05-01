@@ -340,6 +340,7 @@
       flex-shrink: 0;
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 10px;
       padding: 12px 24px;
       background: var(--card);
@@ -360,6 +361,17 @@
     }
 
     .nuevo-bar input[type=text]:focus { outline: none; border-color: var(--primary); }
+    .nuevo-bar .ws-filename {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--green);
+      min-width: 0;
+    }
+    .nuevo-bar .ws-status {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
 
     /* ── Dropzone ── */
     #nuevo-dropzone {
@@ -398,28 +410,6 @@
       display: flex;
       flex-direction: column;
       min-height: 0;
-    }
-
-    .ws-bar {
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 16px;
-      background: #f0fdf6;
-      border-bottom: 1px solid #c3e6d3;
-    }
-
-    .ws-bar .ws-filename {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--green);
-      flex: 1;
-    }
-
-    .ws-bar .ws-status {
-      font-size: 12px;
-      color: var(--muted);
     }
 
     .ws-body {
@@ -879,6 +869,9 @@
       <label for="nuevo-nombre">Nombre:</label>
       <input type="text" id="nuevo-nombre" placeholder="Ej: Recibos Empresa SA" autocomplete="off" />
       <button id="nuevo-btn-pdf" class="green">📄 Subir archivos</button>
+      <span class="ws-filename" id="ws-filename"></span>
+      <span class="ws-status" id="ws-status"></span>
+      <button id="ws-cambiar-pdf" class="alt sm" style="display:none;">Cambiar PDF</button>
       <input id="nuevo-file-input" type="file" accept=".pdf" multiple />
     </div>
 
@@ -893,11 +886,6 @@
 
     <!-- Workspace (visible con PDF cargado) -->
     <div id="nuevo-workspace" style="display:none;">
-      <div class="ws-bar">
-        <span class="ws-filename" id="ws-filename"></span>
-        <span class="ws-status" id="ws-status"></span>
-        <button id="ws-cambiar-pdf" class="alt sm">Cambiar PDF</button>
-      </div>
       <div class="ws-body">
         <!-- Panel izquierdo: thumbnails -->
         <div id="ws-thumbs">

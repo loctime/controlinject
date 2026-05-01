@@ -24,6 +24,9 @@ let nuevoPdfPreviewDisponible = false;
 
 // ── Elementos DOM ──
 const estadoEl = document.getElementById("estado");
+const wsFilenameEl = document.getElementById("ws-filename");
+const wsStatusEl = document.getElementById("ws-status");
+const wsCambiarPdfEl = document.getElementById("ws-cambiar-pdf");
 
 // ─────────────────────────────────────────────
 //  UTILIDADES
@@ -121,8 +124,9 @@ function abrirWorkspaceConImagenes({ nombre, imagenes, bloques, status, fileLabe
 
   dropzone.style.display = "none";
   document.getElementById("nuevo-workspace").style.display = "flex";
-  document.getElementById("ws-filename").textContent = fileLabel || nombre || "Referencia guardada";
+  wsFilenameEl.textContent = fileLabel || nombre || "Referencia guardada";
   setWsStatus(status || `${nuevoImagenes.length} página(s) listas`);
+  wsCambiarPdfEl.style.display = "";
   document.getElementById("ws-crear-bloque").disabled = true;
   document.getElementById("ws-save-status").textContent = "";
   document.getElementById("ws-save-status").className = "ws-save-status";
@@ -618,6 +622,10 @@ const fileInput = document.getElementById("nuevo-file-input");
 
 document.getElementById("nuevo-btn-pdf").addEventListener("click", () => fileInput.click());
 document.getElementById("ws-cambiar-pdf").addEventListener("click", () => {
+  if (nuevoImagenes.length) {
+    const ok = confirm("Cambiar PDF va a limpiar las páginas y bloques del mapeo actual. ¿Querés continuar?");
+    if (!ok) return;
+  }
   resetearWorkspace();
   fileInput.click();
 });
@@ -666,7 +674,8 @@ async function cargarPDF(file) {
   const workspace = document.getElementById("nuevo-workspace");
   workspace.style.display = "flex";
 
-  document.getElementById("ws-filename").textContent = file.name;
+  wsFilenameEl.textContent = file.name;
+  wsCambiarPdfEl.style.display = "";
   setWsStatus("Renderizando páginas…");
   document.getElementById("ws-crear-bloque").disabled = true;
   renderBloques();
@@ -724,7 +733,8 @@ async function cargarMultiplesPDF(files) {
   const workspace = document.getElementById("nuevo-workspace");
   workspace.style.display = "flex";
 
-  document.getElementById("ws-filename").textContent = `${pdfs.length} archivo(s) seleccionados`;
+  wsFilenameEl.textContent = `${pdfs.length} archivo(s) seleccionados`;
+  wsCambiarPdfEl.style.display = "";
   setWsStatus("Preparando archivos…");
   document.getElementById("ws-crear-bloque").disabled = true;
   renderBloques();
@@ -743,7 +753,7 @@ async function cargarMultiplesPDF(files) {
       setWsStatus(`Procesados ${i + 1} de ${pdfs.length} archivo(s)…`);
     }
 
-    document.getElementById("ws-filename").textContent = `${pdfs.length} archivo(s) en la referencia`;
+    wsFilenameEl.textContent = `${pdfs.length} archivo(s) en la referencia`;
     setWsStatus(`${nuevoImagenes.length} página(s) listas`);
     renderThumbs();
     renderBloques();
@@ -784,7 +794,7 @@ async function agregarArchivosAlMapeo(files) {
     }
 
     nuevoImagenes = [...nuevoImagenes, ...nuevasImagenes].sort((a, b) => a.pagina - b.pagina);
-    document.getElementById("ws-filename").textContent =
+    wsFilenameEl.textContent =
       nuevoFuentes.length === 1 ? nuevoFuentes[0] : `${nuevoFuentes.length} archivo(s) en la referencia`;
     setWsStatus(`${nuevoImagenes.length} página(s) listas`);
     renderThumbs();
@@ -829,7 +839,7 @@ async function renderizarPdfEnImagenes(file, { pageOffset = 0, statusPrefix = "R
 }
 
 function setWsStatus(msg) {
-  document.getElementById("ws-status").textContent = msg;
+  wsStatusEl.textContent = msg;
 }
 
 function resetearWorkspace() {
@@ -845,6 +855,9 @@ function resetearWorkspace() {
 
   dropzone.style.display = "flex";
   document.getElementById("nuevo-workspace").style.display = "none";
+  wsFilenameEl.textContent = "";
+  wsStatusEl.textContent = "";
+  wsCambiarPdfEl.style.display = "none";
   document.getElementById("ws-thumbs-grid").innerHTML = "";
   document.getElementById("ws-bloques-list").innerHTML = "";
   document.getElementById("ws-sel-info").textContent = "Seleccioná páginas a la izquierda";
