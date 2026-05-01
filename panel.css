@@ -39,8 +39,8 @@
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: #e2e8f0;
   font-size: 15px;
-  overflow-y: auto;
-  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
   animation: mauFadeIn 0.3s ease-out;
 }
 .mau-panel::-webkit-scrollbar { width: 6px; }
@@ -56,6 +56,7 @@
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.12) 0%, rgba(129, 140, 248, 0.10) 100%);
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   border-radius: 16px 16px 0 0;
+  flex-shrink: 0;
 }
 .mau-header-logo {
   border-radius: 6px;
@@ -102,7 +103,13 @@
 /* ---- Body ---- */
 .mau-body {
   padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
+.mau-body::-webkit-scrollbar { width: 6px; }
+.mau-body::-webkit-scrollbar-track { background: transparent; }
+.mau-body::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.2); border-radius: 3px; }
 
 /* ---- Dropzone ---- */
 .mau-dropzone {
