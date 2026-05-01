@@ -341,9 +341,10 @@ async function cfGetBackendBaseUrl() {
   const auth = await fbGetValidAuth();
   if (!auth?.uid) throw new Error("No hay sesión Firebase activa.");
   const data = await chrome.storage.local.get([KEY_CONTROLFILE_BASE_URL]);
-  const baseUrl = String(data[KEY_CONTROLFILE_BASE_URL] || "").trim();
+  let baseUrl = String(data[KEY_CONTROLFILE_BASE_URL] || "").trim();
   if (!baseUrl) {
-    throw new Error(`Falta configurar ControlStorage baseUrl (clave ${KEY_CONTROLFILE_BASE_URL}).`);
+    // Hardcoded default ControlStorage URL
+    baseUrl = "https://controlfile.onrender.com";
   }
   if (!auth?.idToken) throw new Error("No hay token Firebase válido.");
   return { baseUrl: baseUrl.replace(/\/+$/, ""), auth };
