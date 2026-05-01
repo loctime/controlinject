@@ -47,6 +47,7 @@ const KEY_FB_AUTH = "controlinject_fb_auth";
 const APP_FS_ID = "control-inject";
 const CF_UPLOAD_MAPPING_PATH = "/api/apps/controlinject/upload-mapping";
 const CF_DOWNLOAD_MAPPING_PATH = "/api/apps/controlinject/download-mapping";
+const CF_DELETE_MAPPING_PATH = "/api/apps/controlinject/delete-mapping";
 
 const LEGACY_STORAGE_PREFIX = atob("bWF0ZXNpbg==");
 const legacyStorageKey = (suffix) => `${LEGACY_STORAGE_PREFIX}_${suffix}`;
@@ -284,6 +285,15 @@ async function fsSetDoc(path, payload, idToken) {
   });
 }
 
+async function fsDeleteDoc(path, idToken) {
+  const url = `${FB_FS_URL}/${path}`;
+  const res = await fetch(url, { method: "DELETE", headers: { Authorization: `Bearer ${idToken}` } });
+  if (res.status === 404) return { deleted: false, missing: true };
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error?.message || `Firestore delete error ${res.status}`);
+  return { deleted: true };
+}
+
 async function fsGetDoc(path, idToken) {
   const url = `${FB_FS_URL}/${path}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${idToken}` } });
@@ -425,6 +435,61 @@ async function cfDescargarReferenciaPatronRemoto(nombrePatron) {
     imagenes: Array.isArray(data?.imagenes) ? data.imagenes : [],
     bloques: Array.isArray(data?.bloques) ? data.bloques : [],
     imagenesPorBloque: data?.imagenesPorBloque || null
+  };
+}
+
+async function cfEliminarReferenciaPatronRemoto(nombrePatron) {
+  const nombre = String(nombrePatron || "").trim();
+  if (!nombre) throw new Error("Falta nombre de patrón.");
+  const { baseUrl, auth } = await cfGetBackendBaseUrl();
+  const docId = fbSafeDocId(nombre);
+  const patron = await fsGetDoc(fsPatronDocPath(auth.uid, docId), auth.idToken);
+  const fileId = patron?.controlStorageRef?.fileId;
+  if (!fileId) return { deleted: false, missing: true };
+
+  const res = await fetch(`${baseUrl}${CF_DELETE_MAPPING_PATH}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${auth.idToken}`
+    },
+    body: JSON.stringify({
+      appId: "controlinject",
+      nombre,
+      fileId
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || data?.message || `Delete mapping falló (${res.status}).`);
+  return { deleted: true, fileId, data };
+}
+
+async function eliminarPatronSabanaCompleto(nombrePatron) {
+  const nombre = String(nombrePatron || "").trim();
+  if (!nombre) throw new Error("Falta nombre de patrón.");
+
+  const storage = { ok: true, deleted: false, skipped: false, error: "" };
+  try {
+    const r = await cfEliminarReferenciaPatronRemoto(nombre);
+    storage.deleted = !!r?.deleted;
+    storage.skipped = !!r?.missing;
+  } catch (e) {
+    storage.ok = false;
+    storage.error = e?.message || String(e);
+    console.warn(`[ControlInject] No se pudo eliminar referencia remota "${nombre}":`, e);
+  }
+
+  const auth = await fbGetValidAuth();
+  const docId = fbSafeDocId(nombre);
+  await fsDeleteDoc(fsPatronDocPath(auth.uid, docId), auth.idToken);
+
+  const data = await chrome.storage.local.get(KEY_PATRONES_SABANA);
+  const arr = Array.isArray(data[KEY_PATRONES_SABANA]) ? data[KEY_PATRONES_SABANA] : [];
+  await chrome.storage.local.set({ [KEY_PATRONES_SABANA]: arr.filter((p) => p.nombre !== nombre) });
+
+  return {
+    deleted: true,
+    storage
   };
 }
 
@@ -616,6 +681,10 @@ async function manejarMensaje(mensaje) {
 
   if (accion === "storage:descargarImagenesPatronRemoto") {
     return await cfDescargarReferenciaPatronRemoto(mensaje?.payload?.nombre || "");
+  }
+
+  if (accion === "storage:eliminarPatronSabana") {
+    return await eliminarPatronSabanaCompleto(mensaje?.payload?.nombre || "");
   }
 
   if (accion === "storage:guardarPatronesSabana") {

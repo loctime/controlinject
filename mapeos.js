@@ -428,18 +428,25 @@ function exportarPatron(nombre, patron) {
 async function eliminarPatron(nombre) {
   if (!confirm(`¿Eliminar el mapeo "${nombre}"? Esta acción no se puede deshacer.`)) return;
   try {
-    const nuevos = patrones.filter(p => p.nombre !== nombre);
-    const r = await chrome.runtime.sendMessage({ action: "storage:guardarPatronesSabana", payload: nuevos });
-    if (!r?.ok && r !== undefined) throw new Error("No se pudo eliminar.");
+    mostrar(`Eliminando "${nombre}"…`, "");
+    const r = await chrome.runtime.sendMessage({
+      action: "storage:eliminarPatronSabana",
+      payload: { nombre }
+    });
+    if (!r?.ok) throw new Error(r?.error || "No se pudo eliminar.");
     if (patronActivo === nombre) await guardarPatronActivo(null);
     if (expandedCard === nombre) expandedCard = null;
-    mostrar(`"${nombre}" eliminado.`, "ok");
-    await cargarPatrones();
+    const storage = r.data?.storage;
+    if (storage && storage.ok === false) {
+      mostrar(`"${nombre}" eliminado de Firestore. No se pudo borrar el archivo remoto: ${storage.error}`, "err");
+    } else {
+      mostrar(`"${nombre}" eliminado.`, "ok");
+    }
+    await cargarPatrones({ sync: true });
   } catch (e) {
     mostrar(`Error: ${e.message}`, "err");
   }
 }
-
 // ─────────────────────────────────────────────
 //  IMPORTAR
 // ─────────────────────────────────────────────
