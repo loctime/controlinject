@@ -2263,10 +2263,15 @@
     if (ap) salida.push(ap);
     const pat = String(meta?.patente || "").trim();
     if (pat) salida.push(pat);
+    // Incluir entidades_mencionadas solo si tienen 2+ palabras.
+    // Entidades de 1 sola palabra (ej: "Matesin") son ruido — pueden ser el apellido del
+    // empleador que aparece en todos los documentos, y matchearían incorrectamente con
+    // empleados que tienen ese apellido. Nombres completos de 2+ palabras son suficientemente
+    // específicos para ser empleados reales en una planilla multi-persona.
     if (Array.isArray(meta?.entidades_mencionadas)) {
       meta.entidades_mencionadas.forEach((x) => {
         const t = String(x || "").trim();
-        if (t) salida.push(t);
+        if (t && t.split(/\s+/).length >= 2) salida.push(t);
       });
     }
     const entidades = [...new Set(salida.map(normalizarEntidadClave).filter(Boolean))];
