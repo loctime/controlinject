@@ -18,6 +18,8 @@ let nuevoUltimoClic = null;
 let nuevoModoEdicion = null;      // { nombre, bloquesBase, controlStorageRef }
 let sobresDisponibles = [];       // opciones del cmbSobre de CD
 let nuevoPreviewCache = new Map(); // pagina -> dataUrl en alta resolucion para preview
+let nuevoFuentes = [];
+let nuevoPdfPreviewDisponible = false;
 
 // ── Elementos DOM ──
 const estadoEl = document.getElementById("estado");
@@ -99,6 +101,7 @@ function mapearBloquesParaWorkspace(bloques = [], { conservarPaginas = false } =
 
 function abrirWorkspaceConImagenes({ nombre, imagenes, bloques, status, fileLabel }) {
   nuevoFile = null;
+  nuevoPdfPreviewDisponible = false;
   nuevoImagenes = Array.isArray(imagenes)
     ? imagenes
         .map((img, i) => ({
@@ -112,6 +115,7 @@ function abrirWorkspaceConImagenes({ nombre, imagenes, bloques, status, fileLabe
   nuevoUltimoClic = null;
   nuevoPreviewCache.clear();
   nuevoBloques = Array.isArray(bloques) ? bloques : [];
+  nuevoFuentes = fileLabel ? [fileLabel] : [];
 
   dropzone.style.display = "none";
   document.getElementById("nuevo-workspace").style.display = "flex";
@@ -609,17 +613,26 @@ async function cargarSobres() {
 // ─────────────────────────────────────────────
 const dropzone = document.getElementById("nuevo-dropzone");
 const fileInput = document.getElementById("nuevo-file-input");
+const extraFileInput = document.getElementById("nuevo-extra-file-input");
 
 document.getElementById("nuevo-btn-pdf").addEventListener("click", () => fileInput.click());
 document.getElementById("ws-cambiar-pdf").addEventListener("click", () => {
   resetearWorkspace();
   fileInput.click();
 });
+document.getElementById("ws-agregar-pdf").addEventListener("click", () => extraFileInput.click());
 
 fileInput.addEventListener("change", () => {
-  const f = fileInput.files?.[0];
-  if (f) cargarPDF(f);
+  const files = [...(fileInput.files || [])].filter(f => /\.pdf$/i.test(f.name));
+  if (files.length === 1) cargarPDF(files[0]);
+  else if (files.length > 1) cargarMultiplesPDF(files);
   fileInput.value = "";
+});
+
+extraFileInput.addEventListener("change", async () => {
+  const files = [...(extraFileInput.files || [])].filter(f => /\.pdf$/i.test(f.name));
+  if (files.length) await agregarArchivosAlMapeo(files);
+  extraFileInput.value = "";
 });
 
 // Drag & drop en el dropzone
@@ -630,9 +643,11 @@ dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover
 dropzone.addEventListener("drop", e => {
   e.preventDefault();
   dropzone.classList.remove("dragover");
-  const f = e.dataTransfer.files?.[0];
-  if (f && /\.pdf$/i.test(f.name)) cargarPDF(f);
-  else if (f) mostrar("Solo se aceptan archivos PDF.", "err");
+  const files = [...(e.dataTransfer.files || [])];
+  const pdfs = files.filter(f => /\.pdf$/i.test(f.name));
+  if (pdfs.length === 1) cargarPDF(pdfs[0]);
+  else if (pdfs.length > 1) cargarMultiplesPDF(pdfs);
+  else if (files.length) mostrar("Solo se aceptan archivos PDF.", "err");
 });
 
 document.getElementById("ws-crear-bloque").addEventListener("click", crearBloqueConSeleccion);
@@ -643,9 +658,11 @@ document.getElementById("ws-btn-guardar").addEventListener("click", guardarNuevo
 // ─────────────────────────────────────────────
 async function cargarPDF(file) {
   nuevoFile = file;
+  nuevoPdfPreviewDisponible = true;
   nuevoSeleccion.clear();
   nuevoBloques = [];
   nuevoPreviewCache.clear();
+  nuevoFuentes = [file.name];
 
   if (nuevoModoEdicion?.bloquesBase?.length) {
     nuevoBloques = mapearBloquesParaWorkspace(nuevoModoEdicion.bloquesBase, { conservarPaginas: false });
@@ -661,29 +678,7 @@ async function cargarPDF(file) {
   renderBloques();
 
   try {
-    // Configurar worker local (evita CDN y restricciones de CSP)
-    if (window.pdfjsLib?.GlobalWorkerOptions) {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("pdf.worker.min.js");
-    }
-
-    const ab = await file.arrayBuffer();
-    const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(ab) }).promise;
-
-    nuevoImagenes = [];
-    for (let i = 1; i <= pdf.numPages; i++) {
-      setWsStatus(`Renderizando página ${i} de ${pdf.numPages}…`);
-      const page = await pdf.getPage(i);
-      const viewport = page.getViewport({ scale: 0.5 });
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      nuevoImagenes.push({ pagina: i, base64: canvas.toDataURL("image/jpeg", 0.82).split(",")[1] });
-    }
-    try { pdf.destroy(); } catch {}
+    nuevoImagenes = await renderizarPdfEnImagenes(file, { pageOffset: 0 });
 
     setWsStatus(`${nuevoImagenes.length} página(s) listas`);
     renderThumbs();
@@ -695,6 +690,133 @@ async function cargarPDF(file) {
   }
 }
 
+async function cargarMultiplesPDF(files) {
+  const pdfs = (files || []).filter(f => /\.pdf$/i.test(f.name));
+  if (!pdfs.length) return;
+  if (pdfs.length === 1) {
+    await cargarPDF(pdfs[0]);
+    return;
+  }
+
+  nuevoFile = null;
+  nuevoPdfPreviewDisponible = false;
+  nuevoSeleccion.clear();
+  nuevoBloques = [];
+  nuevoPreviewCache.clear();
+  nuevoFuentes = pdfs.map(f => f.name);
+
+  if (nuevoModoEdicion?.bloquesBase?.length) {
+    nuevoBloques = mapearBloquesParaWorkspace(nuevoModoEdicion.bloquesBase, { conservarPaginas: false });
+  }
+
+  dropzone.style.display = "none";
+  const workspace = document.getElementById("nuevo-workspace");
+  workspace.style.display = "flex";
+
+  document.getElementById("ws-filename").textContent = `${pdfs.length} archivo(s) seleccionados`;
+  setWsStatus("Preparando archivos…");
+  document.getElementById("ws-crear-bloque").disabled = true;
+  renderBloques();
+
+  try {
+    nuevoImagenes = [];
+    let offset = 0;
+    for (let i = 0; i < pdfs.length; i++) {
+      const file = pdfs[i];
+      const imgs = await renderizarPdfEnImagenes(file, {
+        pageOffset: offset,
+        statusPrefix: `Renderizando ${file.name}`
+      });
+      nuevoImagenes.push(...imgs);
+      offset += imgs.length;
+      setWsStatus(`Procesados ${i + 1} de ${pdfs.length} archivo(s)…`);
+    }
+
+    document.getElementById("ws-filename").textContent = `${pdfs.length} archivo(s) en la referencia`;
+    setWsStatus(`${nuevoImagenes.length} página(s) listas`);
+    renderThumbs();
+    renderBloques();
+    actualizarInfoSeleccion();
+    mostrar(`${pdfs.length} archivos cargados en una sola referencia.`, "ok");
+  } catch (e) {
+    setWsStatus("Error: " + e.message);
+    mostrar("No se pudieron cargar los PDFs: " + e.message, "err");
+  }
+}
+
+async function agregarArchivosAlMapeo(files) {
+  if (!nuevoImagenes.length) {
+    mostrar("Primero cargá o abrí un mapeo antes de agregar archivos.", "err");
+    return;
+  }
+
+  const pdfs = (files || []).filter(f => /\.pdf$/i.test(f.name));
+  if (!pdfs.length) return;
+
+  try {
+    const paginaBase = nuevoImagenes.reduce((max, img) => Math.max(max, Number(img?.pagina) || 0), 0);
+    let offset = paginaBase;
+    const nuevasImagenes = [];
+    nuevoPdfPreviewDisponible = false;
+    nuevoFile = null;
+
+    for (let i = 0; i < pdfs.length; i++) {
+      const file = pdfs[i];
+      setWsStatus(`Agregando archivo ${i + 1} de ${pdfs.length}: ${file.name}…`);
+      const imgs = await renderizarPdfEnImagenes(file, {
+        pageOffset: offset,
+        statusPrefix: `Agregando ${file.name}`
+      });
+      nuevasImagenes.push(...imgs);
+      offset += imgs.length;
+      nuevoFuentes.push(file.name);
+    }
+
+    nuevoImagenes = [...nuevoImagenes, ...nuevasImagenes].sort((a, b) => a.pagina - b.pagina);
+    document.getElementById("ws-filename").textContent =
+      nuevoFuentes.length === 1 ? nuevoFuentes[0] : `${nuevoFuentes.length} archivo(s) en la referencia`;
+    setWsStatus(`${nuevoImagenes.length} página(s) listas`);
+    renderThumbs();
+    renderBloques();
+    actualizarInfoSeleccion();
+    mostrar(`${pdfs.length} archivo(s) agregado(s) al mapeo.`, "ok");
+  } catch (e) {
+    setWsStatus("Error: " + e.message);
+    mostrar("No se pudieron agregar los archivos: " + e.message, "err");
+  }
+}
+
+async function renderizarPdfEnImagenes(file, { pageOffset = 0, statusPrefix = "Renderizando" } = {}) {
+  if (window.pdfjsLib?.GlobalWorkerOptions) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("pdf.worker.min.js");
+  }
+
+  const ab = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(ab) }).promise;
+  try {
+    const imagenes = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      setWsStatus(`${statusPrefix}: página ${i} de ${pdf.numPages}…`);
+      const page = await pdf.getPage(i);
+      const viewport = page.getViewport({ scale: 0.5 });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      imagenes.push({
+        pagina: pageOffset + i,
+        base64: canvas.toDataURL("image/jpeg", 0.82).split(",")[1]
+      });
+    }
+    return imagenes;
+  } finally {
+    try { pdf.destroy(); } catch {}
+  }
+}
+
 function setWsStatus(msg) {
   document.getElementById("ws-status").textContent = msg;
 }
@@ -702,6 +824,8 @@ function setWsStatus(msg) {
 function resetearWorkspace() {
   nuevoFile = null;
   nuevoImagenes = [];
+  nuevoFuentes = [];
+  nuevoPdfPreviewDisponible = false;
   nuevoPreviewCache.clear();
   nuevoSeleccion.clear();
   nuevoBloques = [];
@@ -778,7 +902,7 @@ function renderThumbs() {
 
 async function renderizarPaginaPreview(pagina) {
   if (nuevoPreviewCache.has(pagina)) return nuevoPreviewCache.get(pagina);
-  if (!nuevoFile) {
+  if (!nuevoPdfPreviewDisponible || !nuevoFile) {
     const img = nuevoImagenes.find(x => x.pagina === pagina);
     if (img?.base64) {
       const dataUrl = normalizarDataUrlImagen(img.base64);

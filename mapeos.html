@@ -870,7 +870,8 @@
       <label for="nuevo-nombre">Nombre:</label>
       <input type="text" id="nuevo-nombre" placeholder="Ej: Recibos Empresa SA" autocomplete="off" />
       <button id="nuevo-btn-pdf" class="green">📄 Cargar PDF de referencia</button>
-      <input id="nuevo-file-input" type="file" accept=".pdf" />
+      <input id="nuevo-file-input" type="file" accept=".pdf" multiple />
+      <input id="nuevo-extra-file-input" type="file" accept=".pdf" multiple />
     </div>
 
     <!-- Dropzone (visible sin PDF) -->
@@ -887,6 +888,7 @@
       <div class="ws-bar">
         <span class="ws-filename" id="ws-filename"></span>
         <span class="ws-status" id="ws-status"></span>
+        <button id="ws-agregar-pdf" class="alt sm">Agregar archivos</button>
         <button id="ws-cambiar-pdf" class="alt sm">Cambiar PDF</button>
       </div>
       <div class="ws-body">
