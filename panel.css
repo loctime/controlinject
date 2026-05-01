@@ -251,6 +251,74 @@
 .mau-row-flash {
   animation: mauFlashFila 1s ease;
 }
+.mau-toggle-row,
+.mau-toggle-row:hover,
+.mau-tabla tbody tr.mau-toggle-row:nth-child(odd),
+.mau-tabla tbody tr.mau-toggle-row:nth-child(odd):hover {
+  background: transparent;
+}
+.mau-toggle-row td {
+  padding: 12px 0 6px;
+  border-bottom: 0;
+}
+.mau-toggle-all-btn {
+  width: 100%;
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(148, 163, 184, 0.05);
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.mau-toggle-all-btn:hover {
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.28);
+  color: #e2e8f0;
+}
+.mau-preview-modal {
+  z-index: 1000001;
+}
+.mau-preview-box {
+  width: min(960px, calc(100vw - 40px));
+  max-width: 960px;
+  height: min(88vh, 900px);
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
+.mau-preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.mau-preview-subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #94a3b8;
+  word-break: break-word;
+}
+.mau-preview-close-btn {
+  flex-shrink: 0;
+}
+.mau-preview-body {
+  flex: 1;
+  min-height: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.75);
+}
+.mau-preview-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #0f172a;
+}
 
 /* ---- Botones chicos de acción en fila (ver / eliminar) ---- */
 .mau-row-btn {

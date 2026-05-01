@@ -4,7 +4,9 @@
     filas: [],
     nextFilaId: 1,
     ultFilaNuevaId: null,
-    ultimaAlerta: { mensaje: "", ts: 0 }
+    ultimaAlerta: { mensaje: "", ts: 0 },
+    mostrarTodosRequeridos: false,
+    firmaVisibilidadRequeridos: ""
   };
   // DEBUG: exponer. estado para diagnostico desde consola
   window.__MAU_DEBUG__ = { estado };
@@ -947,9 +949,70 @@
     return (recurso.textoCompleto || "").split(/\n/)[0].trim().slice(0, 40);
   }
 
-  function renderTabla() {
-    ui.tabla.innerHTML = "";
-    for (const f of estado.filas) {
+  function filaTieneMatchVisible(fila) {
+    return !!fila?.archivo || fila?.estado === "sin-asignar";
+  }
+
+  function actualizarVisibilidadRequeridos() {
+    const filasConMatch = estado.filas.filter(filaTieneMatchVisible).map((f) => f.id);
+    const firmaNueva = filasConMatch.join("|");
+    if (estado.firmaVisibilidadRequeridos !== firmaNueva) {
+      estado.firmaVisibilidadRequeridos = firmaNueva;
+      estado.mostrarTodosRequeridos = false;
+    }
+  }
+
+  function abrirPreviewArchivo(fila) {
+    if (!fila?.archivo) return;
+    const overlay = document.createElement("div");
+    overlay.className = "mau-confirm mau-preview-modal";
+    const box = document.createElement("div");
+    box.className = "mau-confirm-box mau-preview-box";
+
+    const header = document.createElement("div");
+    header.className = "mau-preview-header";
+    const titleWrap = document.createElement("div");
+    const titulo = document.createElement("strong");
+    titulo.textContent = "Vista previa del archivo";
+    const subtitulo = document.createElement("div");
+    subtitulo.className = "mau-preview-subtitle";
+    subtitulo.textContent = fila.archivo.name || "PDF asignado";
+    titleWrap.appendChild(titulo);
+    titleWrap.appendChild(subtitulo);
+
+    const btnCerrar = document.createElement("button");
+    btnCerrar.type = "button";
+    btnCerrar.className = "mau-btn mau-btn-secondary mau-preview-close-btn";
+    btnCerrar.textContent = "Cerrar";
+    header.appendChild(titleWrap);
+    header.appendChild(btnCerrar);
+
+    const cuerpo = document.createElement("div");
+    cuerpo.className = "mau-preview-body";
+    const frame = document.createElement("iframe");
+    frame.className = "mau-preview-frame";
+    frame.title = fila.archivo.name || "Vista previa PDF";
+    const objectUrl = URL.createObjectURL(fila.archivo);
+    frame.src = objectUrl;
+    cuerpo.appendChild(frame);
+
+    box.appendChild(header);
+    box.appendChild(cuerpo);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const cerrar = () => {
+      try { URL.revokeObjectURL(objectUrl); } catch (e) { }
+      try { overlay.remove(); } catch (e) { }
+    };
+
+    btnCerrar.addEventListener("click", cerrar);
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) cerrar();
+    });
+  }
+
+  function crearFilaTabla(f) {
       const tr = document.createElement("tr");
       tr.dataset.filaId = String(f.id);
       const tdReq = document.createElement("td");
@@ -1012,6 +1075,17 @@
       if (f.archivo && f.archivo.name) archivoNombre.title = f.archivo.name;
       archivoWrap.appendChild(archivoNombre);
       if (f.archivo && f.estado !== "procesando" && f.estado !== "enviado") {
+        const btnPreview = document.createElement("button");
+        btnPreview.type = "button";
+        btnPreview.className = "mau-row-btn";
+        btnPreview.textContent = "Ver archivo";
+        btnPreview.title = "Abrir vista previa del PDF";
+        btnPreview.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          abrirPreviewArchivo(f);
+        });
+        archivoWrap.appendChild(btnPreview);
+
         const btnDel = document.createElement("button");
         btnDel.type = "button";
         btnDel.className = "mau-row-btn mau-row-btn-danger";
@@ -1036,7 +1110,44 @@
       tr.appendChild(tdReq);
       tr.appendChild(tdArchivo);
       tr.appendChild(tdEstado);
-      ui.tabla.appendChild(tr);
+      return tr;
+  }
+
+  function renderTabla() {
+    actualizarVisibilidadRequeridos();
+    ui.tabla.innerHTML = "";
+    const filasConMatch = [];
+    const filasOcultables = [];
+    for (const f of estado.filas) {
+      if (filaTieneMatchVisible(f)) filasConMatch.push(f);
+      else filasOcultables.push(f);
+    }
+
+    const hayMatches = filasConMatch.length > 0;
+    for (const f of filasConMatch) ui.tabla.appendChild(crearFilaTabla(f));
+
+    if (hayMatches && filasOcultables.length) {
+      const trToggle = document.createElement("tr");
+      trToggle.className = "mau-toggle-row";
+      const tdToggle = document.createElement("td");
+      tdToggle.colSpan = 3;
+      const btnToggle = document.createElement("button");
+      btnToggle.type = "button";
+      btnToggle.className = "mau-toggle-all-btn";
+      btnToggle.textContent = estado.mostrarTodosRequeridos
+        ? "Ocultar pendientes sin match"
+        : `Ver todos (${filasOcultables.length} pendientes sin match)`;
+      btnToggle.addEventListener("click", () => {
+        estado.mostrarTodosRequeridos = !estado.mostrarTodosRequeridos;
+        renderTabla();
+      });
+      tdToggle.appendChild(btnToggle);
+      trToggle.appendChild(tdToggle);
+      ui.tabla.appendChild(trToggle);
+    }
+
+    if (!hayMatches || estado.mostrarTodosRequeridos) {
+      for (const f of filasOcultables) ui.tabla.appendChild(crearFilaTabla(f));
     }
 
     if (estado.ultFilaNuevaId != null) {
