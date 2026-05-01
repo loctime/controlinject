@@ -225,13 +225,15 @@
   }
 
   function elegirMejorRecursoDeFila(celdas, idxRecurso, link) {
-    const vacio = { textoCompleto: "", apellido: "", nombre: "", cuil: "", contrato: "" };
+    const vacio = { textoCompleto: "", apellido: "", nombre: "", cuil: "", contrato: "", patente: "" };
     if (!celdas || !celdas.length) return vacio;
     const candidatos = [];
     if (idxRecurso >= 0 && celdas[idxRecurso]) candidatos.push(celdas[idxRecurso]);
     celdas.forEach((td) => { if (!candidatos.includes(td)) candidatos.push(td); });
     let mejor = vacio;
     let mejorScore = -1;
+    // Escanear patente en TODAS las celdas (puede estar en una celda diferente a la del nombre).
+    let patenteEncontrada = "";
     for (const td of candidatos) {
       if (!td || (link && td.contains(link))) continue;
       const rec = parsearRecurso(td);
@@ -244,7 +246,11 @@
         mejorScore = score;
         mejor = rec;
       }
+      if (!patenteEncontrada) {
+        patenteEncontrada = extraerPatenteDeTexto(txt);
+      }
     }
+    if (patenteEncontrada) mejor = { ...mejor, patente: patenteEncontrada };
     return mejor;
   }
 
@@ -359,6 +365,10 @@
       // Para cada nombre, buscar entradas en la tabla (puede haber varias por recurso distinto).
       reqs = [];
       const vacios = { textoCompleto: "", apellido: "", nombre: "", cuil: "", contrato: "" };
+      // Si la tabla tiene datos, es la fuente confiable: solo agregar ítems del sidebar
+      // que tienen fila en la tabla. Los que no tienen fila son ruido (el sidebar puede
+      // leerse de un widget equivocado en la página).
+      const tablaConDatos = mapaTabla.size > 0;
       for (const nombre of nombresSobre) {
         // Match exacto primero; si no hay, match por prefijo (el sobre da el nombre corto
         // y la tabla incluye el período: "F 931" → "F 931-2026-3 (0/1)").
@@ -369,12 +379,19 @@
         }
         if (matches.length > 0) {
           reqs.push(...matches.map(m => ({ nombre: m.nombre, link: m.link, recurso: m.recurso })));
-        } else {
-          // El sobre existe en el widget pero no hay fila en la tabla visible ahora.
-          // Se agrega igual para que aparezca en el modal; el link se buscará en vivo al subir.
+        } else if (!tablaConDatos) {
+          // Solo agregar ítems sin fila si la tabla está vacía (aún cargando).
           reqs.push({ nombre, link: null, recurso: vacios });
         }
       }
+      // Deduplicar por link (la misma fila puede matchear múltiples nombres del sidebar).
+      const vistos = new Set();
+      reqs = reqs.filter(r => {
+        const key = r.link?.href || `${r.nombre}||${r.recurso?.apellido || ""}`;
+        if (vistos.has(key)) return false;
+        vistos.add(key);
+        return true;
+      });
       const conRecurso = reqs.filter((r) => r?.recurso?.apellido).length;
       console.log(`[MAU] Requerimientos desde sobres activos: ${reqs.length} (con recurso: ${conRecurso})`);
       if (conRecurso === 0) {
@@ -938,15 +955,18 @@
 
   /**
    * Genera un texto corto descriptivo del recurso para mostrar en la UI.
+   * Para vehículos muestra la patente; para personas muestra el nombre.
    */
   function etiquetaRecurso(recurso) {
-    if (!recurso || (!recurso.apellido && !recurso.textoCompleto)) return "";
+    if (!recurso) return "";
+    if (recurso.patente) return recurso.patente;
     if (recurso.apellido || recurso.nombre) {
-      const partes = [recurso.apellido, recurso.nombre].filter(Boolean).join(" ");
-      return partes;
+      return [recurso.apellido, recurso.nombre].filter(Boolean).join(" ");
     }
-    // Fallback: primera línea del texto completo.
-    return (recurso.textoCompleto || "").split(/\n/)[0].trim().slice(0, 40);
+    if (recurso.textoCompleto) {
+      return recurso.textoCompleto.split(/\n/)[0].trim().slice(0, 40);
+    }
+    return "";
   }
 
   function filaTieneMatchVisible(fila) {
