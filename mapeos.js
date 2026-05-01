@@ -530,8 +530,15 @@ async function abrirRemapear(patron) {
     });
     mostrar(`"${patron.nombre}" listo para editar.`, "ok");
   } catch (e) {
-    resetearWorkspace();
-    mostrar(`No se pudo abrir "${patron.nombre}": ${e.message}`, "err");
+    // Mostrar workspace con bloques pero sin imágenes — el usuario puede subir el PDF manualmente
+    abrirWorkspaceConImagenes({
+      nombre: patron.nombre,
+      imagenes: [],
+      bloques: mapearBloquesParaWorkspace(bloques, { conservarPaginas: true }),
+      fileLabel: patron.nombre,
+      status: `Subí el PDF de referencia para ver páginas`
+    });
+    mostrar(`No se encontraron páginas guardadas. Subí el PDF de sábana para reasignar páginas.`, "err");
   }
 }
 
@@ -876,6 +883,15 @@ function resetearWorkspace() {
 function renderThumbs() {
   const grid = document.getElementById("ws-thumbs-grid");
   grid.innerHTML = "";
+
+  if (!nuevoImagenes.length) {
+    const msg = document.createElement("p");
+    msg.style.cssText = "color:var(--muted);font-size:12px;padding:8px 4px;grid-column:1/-1;";
+    msg.textContent = `Usá "Cambiar PDF" para cargar el PDF de referencia y ver las páginas.`;
+    grid.appendChild(msg);
+    refrescarThumbsVisual();
+    return;
+  }
 
   for (const { pagina, base64 } of nuevoImagenes) {
     const div = document.createElement("div");
