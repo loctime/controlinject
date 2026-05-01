@@ -1,4 +1,4 @@
-# Control Documentario — Estado del proyecto (para Claude)
+# ControlBun — Estado del proyecto (para Claude)
 
 ## Qué es esto
 Extensión de Chrome (Manifest V3) que automatiza la subida de documentos PDF a controldocumentario.com para la empresa empresa. Usa Claude API (claude-haiku-4-5) para identificar documentos y asignarlos a las personas correctas.

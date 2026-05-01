@@ -1,4 +1,4 @@
-# Control Documentario — Estado del proyecto (para Codex)
+# ControlBun — Estado del proyecto (para Codex)
 
 ## Qué es esto
 Extensión de Chrome (Manifest V3) que automatiza la subida de documentos PDF a controldocumentario.com para la empresa empresa. Usa Codex API (Codex-haiku-4-5) para identificar documentos y asignarlos a las personas correctas.

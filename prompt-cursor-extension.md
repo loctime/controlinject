@@ -1,10 +1,10 @@
-# Prompt para Cursor — Extensión de Chrome "Control Documentario"
+# Prompt para Cursor — Extensión de Chrome "ControlBun"
 
 Copiá TODO lo que está abajo de la línea y pegalo en el chat de Cursor. Decile: "creá esta extensión completa, todos los archivos, lista para cargar en Chrome".
 
 ---
 
-Quiero que crees una **extensión de Chrome (Manifest V3)** llamada **"Control Documentario"** que automatiza la subida de documentos a la plataforma `controldocumentario.com` para el cliente EMPRESA EJEMPLO, empresa destino PLATAFORMA DESTINO.
+Quiero que crees una **extensión de Chrome (Manifest V3)** llamada **"ControlBun"** que automatiza la subida de documentos a la plataforma `controldocumentario.com` para el cliente EMPRESA EJEMPLO, empresa destino PLATAFORMA DESTINO.
 
 ## Contexto del problema
 El usuario debe subir muchos PDFs por mes a requerimientos pendientes en `https://controldocumentario.com/Bandeja.aspx?menu=1`. Cada requerimiento tiene un nombre (ej: "F 931", "Nómina F 931", "Cláusula no repetición", "Seguro de vida obligatorio", etc.) y necesita un PDF adjunto. El flujo manual es lento: abrir requerimiento → adjuntar archivo → continuar → enviar → volver → siguiente.
@@ -21,11 +21,11 @@ El popup de "Adjuntar archivo" vive en un **iframe doblemente anidado**:
 
 ### 1. Detección automática
 - La extensión se activa solo en `controldocumentario.com`.
-- Cuando el usuario está en el Área de Trabajo (`/Bandeja.aspx`), inyecta un panel flotante a la derecha llamado **"Control Documentario"**.
+- Cuando el usuario está en el Área de Trabajo (`/Bandeja.aspx`), inyecta un panel flotante a la derecha llamado **"ControlBun"**.
 
 ### 2. Panel flotante
 El panel debe tener:
-- Header con logo/texto "Control Documentario" y botón minimizar.
+- Header con logo/texto "ControlBun" y botón minimizar.
 - **Zona drag-and-drop** grande para arrastrar PDFs desde el explorador de Windows.
 - Botón **"Detectar requerimientos pendientes"** que hace click en el botón "Buscar" verde de la página y luego lee la lista de requerimientos pendientes (estado "Pend envío") y los muestra en una tabla dentro del panel.
 - Tabla con columnas: `Requerimiento | Archivo asignado | Estado`.

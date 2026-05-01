@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Control Documentario",
+  "name": "ControlBun",
   "description": "Automatiza la carga de documentos",
   "version": "1.0.0",
   "permissions": [

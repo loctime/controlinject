@@ -365,7 +365,7 @@ git commit -m "feat: panel.js — login obligatorio, quita toda la lógica de Ap
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Control Documentario - Mapeos</title>
+  <title>ControlBun - Mapeos</title>
   <style>
     :root {
       --bg: #f4f7fb;
