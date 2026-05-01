@@ -505,3 +505,109 @@
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
   animation: mauFadeIn 0.25s ease-out;
 }
+
+/* Grid de paginas */
+.thumbs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 12px;
+  padding: 4px 2px;
+}
+
+.thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.12s ease;
+}
+.thumb:hover { transform: translateY(-3px); }
+.thumb:active { transform: scale(0.96); }
+
+.thumb-doc {
+  width: 100%;
+  aspect-ratio: 0.707;
+  background: #fff;
+  border-radius: 3px;
+  border: 1.5px solid rgba(148,163,184,0.25);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 0 0 0 transparent;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.thumb-doc img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.thumb-doc::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 14px; height: 14px;
+  background: linear-gradient(225deg, #1e293b 50%, transparent 50%);
+  z-index: 2;
+}
+
+/* Badge */
+.thumb-badge {
+  position: absolute;
+  top: 5px; left: 5px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 3;
+}
+
+/* Numero y tag */
+.thumb-num {
+  font-size: 11px;
+  color: #94a3b8;
+  transition: color 0.15s;
+  font-weight: 500;
+}
+.thumb-tag {
+  font-size: 10px;
+  color: #10b981;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+  text-align: center;
+  min-height: 13px;
+  line-height: 1.2;
+}
+
+/* Estado: seleccionada */
+.thumb.selected .thumb-doc {
+  border-color: #38bdf8;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 0 0 3px rgba(56,189,248,0.35);
+}
+.thumb.selected .thumb-badge {
+  background: #38bdf8;
+  color: #0f172a;
+  opacity: 1;
+}
+.thumb.selected .thumb-num { color: #38bdf8; }
+
+/* Estado: asignada a bloque */
+.thumb.assigned .thumb-doc {
+  border-color: #10b981;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 0 0 2px rgba(16,185,129,0.3);
+}
+.thumb.assigned .thumb-badge {
+  background: #10b981;
+  color: #fff;
+  opacity: 1;
+}
+.thumb.assigned .thumb-num { color: #10b981; }
+.thumb.assigned { cursor: default; }
+.thumb.assigned:hover { transform: none; }

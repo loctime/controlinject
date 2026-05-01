@@ -536,9 +536,18 @@ function renderThumbs() {
     div.className = "thumb";
     div.dataset.pagina = pagina;
 
+    const doc = document.createElement("div");
+    doc.className = "thumb-doc";
+
+    const badge = document.createElement("span");
+    badge.className = "thumb-badge";
+
     const img = document.createElement("img");
     img.src = `data:image/jpeg;base64,${base64}`;
     img.alt = `Página ${pagina}`;
+
+    doc.appendChild(badge);
+    doc.appendChild(img);
 
     const num = document.createElement("span");
     num.className = "thumb-num";
@@ -548,8 +557,8 @@ function renderThumbs() {
     tag.className = "thumb-tag";
     tag.textContent = "";
 
+    div.appendChild(doc);
     div.appendChild(num);
-    div.appendChild(img);
     div.appendChild(tag);
 
     div.addEventListener("click", e => manejarClicThumb(e, pagina));
@@ -585,6 +594,9 @@ function refrescarThumbsVisual() {
 
     const bloquesDeEsta = nuevoBloques.filter(b => b.paginas.includes(pag));
     el.classList.toggle("assigned", bloquesDeEsta.length > 0 && !sel);
+
+    const badge = el.querySelector(".thumb-badge");
+    if (badge) badge.textContent = "\u2713";
 
     const tag = el.querySelector(".thumb-tag");
     if (bloquesDeEsta.length > 0) {

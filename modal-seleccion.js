@@ -56,30 +56,81 @@
   .mau-modal-footer button:disabled { opacity: .55; cursor: not-allowed; }
 
   .mau-thumbs {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 10px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 12px;
+    padding: 4px 2px;
   }
   .mau-thumb {
-    background: #fff; border: 2px solid #d0d4d8; border-radius: 6px;
-    padding: 6px; cursor: pointer; position: relative; user-select: none;
-    display: flex; flex-direction: column; align-items: center;
-    transition: border-color .1s, background .1s;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    transition: transform .12s ease;
   }
-  .mau-thumb:hover { border-color: #87b3ff; }
-  .mau-thumb.sel { border-color: #1e66d1; background: #e8f0ff; }
-  .mau-thumb.asignada { opacity: .65; }
-  .mau-thumb canvas { max-width: 100%; height: auto; display: block; }
+  .mau-thumb:hover { transform: translateY(-3px); }
+  .mau-thumb:active { transform: scale(.96); }
+  .mau-thumb-doc {
+    width: 100%;
+    aspect-ratio: .707;
+    background: #fff;
+    border-radius: 3px;
+    border: 1.5px solid rgba(148,163,184,.25);
+    box-shadow: 0 2px 8px rgba(0,0,0,.25), 0 0 0 0 transparent;
+    position: relative;
+    overflow: hidden;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .mau-thumb-doc img,
+  .mau-thumb-doc canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .mau-thumb-doc::after {
+    content: '';
+    position: absolute;
+    top: 0; right: 0;
+    width: 14px; height: 14px;
+    background: linear-gradient(225deg, #f4f5f7 50%, transparent 50%);
+    z-index: 2;
+  }
   .mau-thumb-num {
-    position: absolute; top: 4px; left: 4px; background: rgba(0,0,0,.72);
-    color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 3px; font-weight: 600;
+    font-size: 11px;
+    color: #94a3b8;
+    transition: color .15s;
+    font-weight: 500;
   }
   .mau-thumb-tag {
-    margin-top: 4px; font-size: 11px; color: #444; text-align: center; line-height: 1.2;
-    max-height: 28px; overflow: hidden;
+    font-size: 10px;
+    color: #10b981;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90px;
+    text-align: center;
+    min-height: 13px;
+    line-height: 1.2;
   }
   .mau-thumb-bloque { display: none; }
+  .mau-thumb-badge {
+    position: absolute;
+    top: 5px; left: 5px;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    opacity: 0;
+    transition: opacity .15s;
+    z-index: 3;
+  }
   .mau-thumb-check {
-    position: absolute; top: 30px; left: 4px;
+    position: absolute; top: 28px; left: 5px;
     width: 17px; height: 17px; cursor: pointer; z-index: 1;
     opacity: 0; transition: opacity .15s;
   }
@@ -89,9 +140,31 @@
     position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,.55);
     color: #fff; border: none; border-radius: 3px; width: 22px; height: 22px;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
-    font-size: 13px; padding: 0; opacity: 0; transition: opacity .15s; z-index: 1;
+    font-size: 13px; padding: 0; opacity: 0; transition: opacity .15s; z-index: 3;
   }
   .mau-thumb:hover .mau-thumb-eye { opacity: 1; }
+  .mau-thumb.sel .mau-thumb-doc {
+    border-color: #38bdf8;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25), 0 0 0 3px rgba(56,189,248,.35);
+  }
+  .mau-thumb.sel .mau-thumb-badge {
+    background: #38bdf8;
+    color: #0f172a;
+    opacity: 1;
+  }
+  .mau-thumb.sel .mau-thumb-num { color: #38bdf8; }
+  .mau-thumb.asignada .mau-thumb-doc {
+    border-color: #10b981;
+    box-shadow: 0 2px 8px rgba(0,0,0,.25), 0 0 0 2px rgba(16,185,129,.3);
+  }
+  .mau-thumb.asignada .mau-thumb-badge {
+    background: #10b981;
+    color: #fff;
+    opacity: 1;
+  }
+  .mau-thumb.asignada .mau-thumb-num { color: #10b981; }
+  .mau-thumb.asignada { cursor: default; }
+  .mau-thumb.asignada:hover { transform: none; }
   .mau-preview-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,.88);
     display: flex; align-items: center; justify-content: center;
@@ -322,8 +395,20 @@
       div.className = "mau-thumb";
       div.dataset.pagina = String(i);
       div.dataset.label = [etiqueta, meta].filter(Boolean).join(" — ") || "Sin identificar";
-      div.innerHTML = `<span class="mau-thumb-num">${i}</span>`;
-      div.appendChild(canvas);
+
+      const doc = document.createElement("div");
+      doc.className = "mau-thumb-doc";
+
+      const badge = document.createElement("span");
+      badge.className = "mau-thumb-badge";
+      badge.textContent = "\u2713";
+
+      const img = document.createElement("img");
+      img.src = canvas.toDataURL();
+      img.alt = `Página ${i}`;
+
+      doc.appendChild(badge);
+      doc.appendChild(img);
 
       const chk = document.createElement("input");
       chk.type = "checkbox";
@@ -337,7 +422,7 @@
         refrescarSeleccionVisual();
         actualizarInfoSeleccion();
       });
-      div.appendChild(chk);
+      doc.appendChild(chk);
 
       const eyeBtn = document.createElement("button");
       eyeBtn.className = "mau-thumb-eye";
@@ -348,11 +433,18 @@
         ev.stopPropagation();
         abrirPreview(canvas.toDataURL(), i, pageLabel);
       });
-      div.appendChild(eyeBtn);
+      doc.appendChild(eyeBtn);
+
+      const num = document.createElement("span");
+      num.className = "mau-thumb-num";
+      num.textContent = i;
 
       const tag = document.createElement("div");
       tag.className = "mau-thumb-tag";
       tag.textContent = pageLabel;
+
+      div.appendChild(doc);
+      div.appendChild(num);
       div.appendChild(tag);
 
       div.addEventListener("click", (ev) => manejarClicThumb(ev, i));
@@ -497,6 +589,8 @@
       el.classList.toggle("sel", esSel);
       const chk = el.querySelector(".mau-thumb-check");
       if (chk) chk.checked = esSel;
+      const badge = el.querySelector(".mau-thumb-badge");
+      if (badge) badge.textContent = "\u2713";
 
       // mostrar etiquetas de todos los bloques a los que pertenece esta página
       const bloquesDeEsta = ctx.bloques

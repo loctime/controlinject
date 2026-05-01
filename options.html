@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="es">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -19,7 +20,9 @@
       --err-text: #b42318;
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
@@ -92,7 +95,9 @@
       line-height: 1.45;
     }
 
-    .row { margin-top: 10px; }
+    .row {
+      margin-top: 10px;
+    }
 
     label {
       display: block;
@@ -148,7 +153,9 @@
       transition: transform 0.12s ease;
     }
 
-    button:hover { transform: translateY(-1px); }
+    button:hover {
+      transform: translateY(-1px);
+    }
 
     button.alt {
       background: #eef3fb;
@@ -198,17 +205,27 @@
     }
 
     @media (max-width: 640px) {
-      body { padding: 14px; }
-      .hero h1 { font-size: 21px; }
-      .two-time { grid-template-columns: 1fr; }
+      body {
+        padding: 14px;
+      }
+
+      .hero h1 {
+        font-size: 21px;
+      }
+
+      .two-time {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
+
 <body>
   <main class="container">
     <section class="hero">
       <div class="hero-top">
-        <img src="icons/icon-128.png" alt="Logo" width="38" height="38" style="border-radius:10px;background:#fff;padding:4px;" />
+        <img src="icons/icon-128.png" alt="Logo" width="38" height="38"
+          style="border-radius:10px;background:#fff;padding:4px;" />
         <h1>Control Documentario</h1>
       </div>
       <p>Todo lo de esta pagina son ajustes simples. Configuralo una vez y despues la extension trabaja sola.</p>
@@ -236,7 +253,7 @@
         </div>
 
         <div id="login-info" style="display:none;">
-          <p class="hint" style="margin-top:0;">Sesion activa: <b id="fb-user-label">-</b></p>
+          <p class="hint" style="margin-top:0;">Sesion activa: <b email="fb-user-label">-</b></p>
           <div class="acciones">
             <button id="btn-sync-down" type="button" class="alt">Traer de nube</button>
             <button id="btn-sync-up" type="button" class="alt">Subir a nube</button>
@@ -326,7 +343,8 @@
           <button id="guardar-tg" type="button">Guardar</button>
           <button id="probar-tg" type="button" class="alt">Enviar prueba</button>
           <button id="chequear-ahora" type="button" class="alt">Chequear ahora</button>
-          <button id="chequear-visible" type="button" class="alt" title="Abre la pestana de Vencimientos para ver el chequeo en vivo">Chequear viendo pestana</button>
+          <button id="chequear-visible" type="button" class="alt"
+            title="Abre la pestana de Vencimientos para ver el chequeo en vivo">Chequear viendo pestana</button>
         </div>
       </article>
 
@@ -362,7 +380,9 @@
         </div>
         <div class="row">
           <label for="cf-debug-output">Resultado</label>
-          <textarea id="cf-debug-output" rows="6" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 11px;font-size:12px;font-family:Consolas, monospace;" readonly></textarea>
+          <textarea id="cf-debug-output" rows="6"
+            style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 11px;font-size:12px;font-family:Consolas, monospace;"
+            readonly></textarea>
         </div>
       </article>
     </section>
@@ -372,4 +392,5 @@
 
   <script src="options.js"></script>
 </body>
+
 </html>
