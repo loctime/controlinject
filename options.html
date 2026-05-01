@@ -344,43 +344,6 @@
         </div>
       </article>
 
-      <article class="card">
-        <h2>4) Memoria de aprendizaje</h2>
-        <p class="help">Hace backup de tus mapeos o recuperalos en segundos.</p>
-
-        <div class="acciones">
-          <button id="exportar-mapeo" type="button">Exportar mapeo</button>
-          <button id="importar-mapeo-btn" type="button" class="alt">Importar mapeo</button>
-          <input id="importar-mapeo-input" type="file" accept=".json" style="display:none;" />
-        </div>
-
-        <div class="acciones">
-          <button id="limpiar" type="button" class="alt">Limpiar memoria de mapeos</button>
-          <button id="limpiar-sabana" type="button" class="alt">Limpiar patrones de sabana</button>
-        </div>
-      </article>
-
-      <article class="card">
-        <h2>5) Debug ControlStorage</h2>
-        <p class="help">Prueba tecnica para validar subida remota de referencia usando SDK.</p>
-
-        <div class="row">
-          <label for="cf-baseurl">ControlStorage Base URL</label>
-          <input id="cf-baseurl" type="text" placeholder="https://tu-backend-controlstorage..." autocomplete="off" />
-          <div class="hint">Se usa para inicializar el SDK con appId = controlinject.</div>
-        </div>
-
-        <div class="acciones">
-          <button id="cf-guardar-baseurl" type="button" class="alt">Guardar URL</button>
-          <button id="cf-debug-upload" type="button">Probar subida</button>
-        </div>
-        <div class="row">
-          <label for="cf-debug-output">Resultado</label>
-          <textarea id="cf-debug-output" rows="6"
-            style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 11px;font-size:12px;font-family:Consolas, monospace;"
-            readonly></textarea>
-        </div>
-      </article>
     </section>
 
     <p id="estado"></p>
