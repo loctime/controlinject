@@ -17,6 +17,7 @@ let nuevoBloques = [];            // [{ id, nombre, paginas, requerimientos }]
 let nuevoUltimoClic = null;
 let nuevoModoEdicion = null;      // { nombre, bloquesBase } si estamos editando un patron existente
 let sobresDisponibles = [];       // opciones del cmbSobre de CD
+let nuevoPreviewCache = new Map(); // pagina -> dataUrl en alta resolucion para preview
 
 // ── Elementos DOM ──
 const estadoEl = document.getElementById("estado");
@@ -444,6 +445,7 @@ async function cargarPDF(file) {
   nuevoFile = file;
   nuevoSeleccion.clear();
   nuevoBloques = [];
+  nuevoPreviewCache.clear();
 
   if (nuevoModoEdicion?.bloquesBase?.length) {
     nuevoBloques = nuevoModoEdicion.bloquesBase.map((b, i) => ({
@@ -506,6 +508,7 @@ function setWsStatus(msg) {
 function resetearWorkspace() {
   nuevoFile = null;
   nuevoImagenes = [];
+  nuevoPreviewCache.clear();
   nuevoSeleccion.clear();
   nuevoBloques = [];
   nuevoUltimoClic = null;
@@ -546,8 +549,19 @@ function renderThumbs() {
     img.src = `data:image/jpeg;base64,${base64}`;
     img.alt = `Página ${pagina}`;
 
+    const eyeBtn = document.createElement("button");
+    eyeBtn.className = "thumb-eye";
+    eyeBtn.type = "button";
+    eyeBtn.title = "Ver página completa";
+    eyeBtn.innerHTML = "&#128065;";
+    eyeBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      abrirPreviewPagina(`data:image/jpeg;base64,${base64}`, pagina);
+    });
+
     doc.appendChild(badge);
     doc.appendChild(img);
+    doc.appendChild(eyeBtn);
 
     const num = document.createElement("span");
     num.className = "thumb-num";
@@ -566,6 +580,173 @@ function renderThumbs() {
   }
 
   refrescarThumbsVisual();
+}
+
+async function renderizarPaginaPreview(pagina) {
+  if (nuevoPreviewCache.has(pagina)) return nuevoPreviewCache.get(pagina);
+  if (!nuevoFile) throw new Error("No hay PDF cargado.");
+
+  if (window.pdfjsLib?.GlobalWorkerOptions) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = chrome.runtime.getURL("pdf.worker.min.js");
+  }
+
+  const ab = await nuevoFile.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: new Uint8Array(ab) }).promise;
+  try {
+    const page = await pdf.getPage(pagina);
+    const viewport = page.getViewport({ scale: 2.2 });
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const dataUrl = canvas.toDataURL("image/png");
+    nuevoPreviewCache.set(pagina, dataUrl);
+    return dataUrl;
+  } finally {
+    try { pdf.destroy(); } catch {}
+  }
+}
+
+function abrirPreviewPagina(dataUrl, pagina) {
+  const bloquesDeEsta = nuevoBloques.filter(b => b.paginas.includes(pagina));
+  const label = bloquesDeEsta.length
+    ? bloquesDeEsta.map(b => b.nombre).join(" · ")
+    : "Sin bloque asignado";
+
+  const overlay = document.createElement("div");
+  overlay.className = "thumb-preview-overlay";
+  overlay.innerHTML = `
+    <div class="thumb-preview-img-wrap">
+      <img src="${dataUrl}" alt="Página ${pagina}" />
+    </div>
+    <div class="thumb-preview-toolbar">
+      <button class="thumb-zoom-out" title="Alejar">−</button>
+      <span class="thumb-preview-zoom-label">100%</span>
+      <button class="thumb-zoom-in" title="Acercar">+</button>
+      <button class="thumb-zoom-reset" title="Restablecer">⟳</button>
+    </div>
+    <button class="thumb-preview-close" title="Cerrar">&times;</button>
+    <div class="thumb-preview-label">Página ${pagina} — ${escapeHtml(label)}</div>
+    <div class="thumb-preview-status">Cargando vista nítida…</div>
+  `;
+
+  const wrap = overlay.querySelector(".thumb-preview-img-wrap");
+  const img = overlay.querySelector("img");
+  const lbl = overlay.querySelector(".thumb-preview-zoom-label");
+  const status = overlay.querySelector(".thumb-preview-status");
+  let scale = 1;
+  let tx = 0;
+  let ty = 0;
+
+  function aplicar(animate) {
+    img.style.transition = animate ? "transform .15s" : "none";
+    img.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+    lbl.textContent = Math.round(scale * 100) + "%";
+  }
+
+  function cambiarZoom(delta, cx = 0, cy = 0) {
+    const prev = scale;
+    scale = Math.min(8, Math.max(0.2, scale * (1 + delta)));
+    const r = scale / prev;
+    tx = cx + (tx - cx) * r;
+    ty = cy + (ty - cy) * r;
+    aplicar(false);
+  }
+
+  overlay.addEventListener("wheel", e => {
+    e.preventDefault();
+    const rect = overlay.getBoundingClientRect();
+    const cx = e.clientX - rect.left - rect.width / 2;
+    const cy = e.clientY - rect.top - rect.height / 2;
+    cambiarZoom(e.deltaY < 0 ? 0.15 : -0.15, cx, cy);
+  }, { passive: false });
+
+  overlay.querySelector(".thumb-zoom-in").addEventListener("click", e => {
+    e.stopPropagation();
+    cambiarZoom(0.25);
+  });
+  overlay.querySelector(".thumb-zoom-out").addEventListener("click", e => {
+    e.stopPropagation();
+    cambiarZoom(-0.25);
+  });
+  overlay.querySelector(".thumb-zoom-reset").addEventListener("click", e => {
+    e.stopPropagation();
+    scale = 1;
+    tx = 0;
+    ty = 0;
+    aplicar(true);
+  });
+
+  let drag = null;
+  wrap.addEventListener("mousedown", e => {
+    if (e.button !== 0) return;
+    drag = { x: e.clientX - tx, y: e.clientY - ty };
+    wrap.classList.add("dragging");
+  });
+
+  function onMouseMove(e) {
+    if (!drag) return;
+    tx = e.clientX - drag.x;
+    ty = e.clientY - drag.y;
+    aplicar(false);
+  }
+
+  function onMouseUp() {
+    drag = null;
+    wrap.classList.remove("dragging");
+  }
+
+  window.addEventListener("mousemove", onMouseMove);
+  window.addEventListener("mouseup", onMouseUp);
+
+  function cerrar() {
+    overlay.remove();
+    document.removeEventListener("keydown", onKey);
+    window.removeEventListener("mousemove", onMouseMove);
+    window.removeEventListener("mouseup", onMouseUp);
+  }
+  function onKey(e) {
+    if (e.key === "Escape") cerrar();
+  }
+
+  overlay.querySelector(".thumb-preview-close").addEventListener("click", cerrar);
+  overlay.addEventListener("click", ev => {
+    if (ev.target === overlay) cerrar();
+  });
+  document.addEventListener("keydown", onKey);
+
+  img.onload = () => {
+    const fitScale = Math.min(
+      (window.innerWidth * 0.88) / img.naturalWidth,
+      (window.innerHeight * 0.88) / img.naturalHeight,
+      1
+    );
+    scale = fitScale;
+    tx = 0;
+    ty = 0;
+    aplicar(false);
+  };
+
+  document.body.appendChild(overlay);
+
+  renderizarPaginaPreview(pagina)
+    .then(previewUrl => {
+      if (!document.body.contains(overlay)) return;
+      if (img.src !== previewUrl) {
+        img.src = previewUrl;
+        scale = 1;
+        tx = 0;
+        ty = 0;
+      }
+      if (status) status.remove();
+    })
+    .catch(err => {
+      if (!document.body.contains(overlay) || !status) return;
+      status.textContent = "No se pudo mejorar la vista: " + err.message;
+    });
 }
 
 function manejarClicThumb(e, pagina) {
