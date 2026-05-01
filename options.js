@@ -104,28 +104,6 @@ document.getElementById("btn-logout").addEventListener("click", async () => {
   }
 });
 
-document.getElementById("btn-sync-up").addEventListener("click", async () => {
-  try {
-    mostrar("Subiendo configuraciÃ³n a Firestoreâ€¦", "");
-    const r = await chrome.runtime.sendMessage({ action: "firebase:syncUp" });
-    if (!r?.ok) throw new Error(r?.error || "No se pudo subir.");
-    mostrar(`Subida completa. Patrones sincronizados: ${r.data?.patrones ?? 0}.`, "ok");
-  } catch (e) {
-    mostrar(`Error: ${e.message}`, "err");
-  }
-});
-
-document.getElementById("btn-sync-down").addEventListener("click", async () => {
-  try {
-    mostrar("Trayendo configuraciÃ³n desde Firestoreâ€¦", "");
-    const r = await chrome.runtime.sendMessage({ action: "firebase:syncDown" });
-    if (!r?.ok) throw new Error(r?.error || "No se pudo traer.");
-    await cargarConfig();
-    mostrar(`Descarga completa. Patrones sincronizados: ${r.data?.patrones ?? 0}.`, "ok");
-  } catch (e) {
-    mostrar(`Error: ${e.message}`, "err");
-  }
-});
 
 
 document.getElementById("limpiar").addEventListener("click", async () => {

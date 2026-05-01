@@ -412,18 +412,29 @@ async function cfSubirReferenciaPatronRemoto(payload) {
   return {
     ok: true,
     fileId,
+    controlStorageRef: {
+      fileId,
+      fileName: uploaded?.fileName || fileName,
+      fileSize: uploaded?.fileSize || null,
+      downloadUrl: uploaded?.downloadUrl || null,
+      shareUrl: uploaded?.shareUrl || null,
+      updatedAtMs: Date.now()
+    },
     downloadUrl: uploaded?.downloadUrl || null,
     shareUrl: uploaded?.shareUrl || null
   };
 }
 
-async function cfDescargarReferenciaPatronRemoto(nombrePatron) {
+async function cfDescargarReferenciaPatronRemoto(nombrePatron, ref = null) {
   const nombre = String(nombrePatron || "").trim();
   if (!nombre) throw new Error("Falta nombre de patrón.");
   const { baseUrl, auth } = await cfGetBackendBaseUrl();
-  const docId = fbSafeDocId(nombre);
-  const patron = await fsGetDoc(fsPatronDocPath(auth.uid, docId), auth.idToken);
-  const fileId = patron?.controlStorageRef?.fileId;
+  let fileId = ref?.fileId || ref?.controlStorageRef?.fileId || "";
+  if (!fileId) {
+    const docId = fbSafeDocId(nombre);
+    const patron = await fsGetDoc(fsPatronDocPath(auth.uid, docId), auth.idToken);
+    fileId = patron?.controlStorageRef?.fileId;
+  }
   if (!fileId) return null;
   const res = await fetch(`${baseUrl}${CF_DOWNLOAD_MAPPING_PATH}?fileId=${encodeURIComponent(fileId)}`, {
     headers: { Authorization: `Bearer ${auth.idToken}` }
@@ -551,6 +562,7 @@ async function fbSyncConfigUp() {
       bloques: Array.isArray(p.bloques) ? p.bloques : null,
       firma: Array.isArray(p.firma) ? p.firma : null,
       totalPaginas: p.totalPaginas || null,
+      controlStorageRef: p.controlStorageRef || null,
       updatedAtMs: p.updatedAt || Date.now()
     }, auth.idToken);
   }));
@@ -654,6 +666,7 @@ async function manejarMensaje(mensaje) {
     const firma = payload.firma;
     const bloquesModal = payload.bloquesModal;
     const firmaTipos = payload.firmaTipos;
+    const controlStorageRef = payload.controlStorageRef || null;
     if (!nombre) throw new Error("Falta el nombre del patrón.");
     const tieneViejo = Array.isArray(bloques) && Array.isArray(firma);
     const tieneNuevo = Array.isArray(bloquesModal) && Array.isArray(firmaTipos);
@@ -661,12 +674,14 @@ async function manejarMensaje(mensaje) {
     const data = await chrome.storage.local.get(KEY_PATRONES_SABANA);
     const arr = data[KEY_PATRONES_SABANA] || [];
     const idx = arr.findIndex((p) => p.nombre === nombre);
-    const entry = { nombre, updatedAt: Date.now() };
+    const previo = idx >= 0 ? (arr[idx] || {}) : {};
+    const entry = { ...previo, nombre, updatedAt: Date.now() };
     if (tieneViejo) { entry.bloques = bloques; entry.firma = firma; }
     if (tieneNuevo) {
       entry.bloquesModal = bloquesModal;
       entry.firmaTipos = firmaTipos;
       if (payload.totalPaginas != null) entry.totalPaginas = payload.totalPaginas;
+      if (controlStorageRef) entry.controlStorageRef = controlStorageRef;
     }
     if (idx >= 0) arr[idx] = entry;
     else arr.push(entry);
@@ -680,7 +695,10 @@ async function manejarMensaje(mensaje) {
   }
 
   if (accion === "storage:descargarImagenesPatronRemoto") {
-    return await cfDescargarReferenciaPatronRemoto(mensaje?.payload?.nombre || "");
+    return await cfDescargarReferenciaPatronRemoto(
+      mensaje?.payload?.nombre || "",
+      mensaje?.payload?.controlStorageRef || mensaje?.payload || null
+    );
   }
 
   if (accion === "storage:eliminarPatronSabana") {

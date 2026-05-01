@@ -35,6 +35,11 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
 
+function normalizarDataUrlImagen(base64, mediaType = "image/jpeg") {
+  const s = String(base64 || "");
+  return s.startsWith("data:") ? s : `data:${mediaType};base64,${s}`;
+}
+
 function paginasAsignadas(exceptId = null) {
   const set = new Set();
   for (const b of nuevoBloques) {
@@ -227,6 +232,9 @@ function buildExpandPanel(nombrePatron, patron) {
   const bloques = Array.isArray(patron.bloquesModal) ? patron.bloquesModal : [];
   const panel = document.createElement("div");
   panel.className = "card-expand";
+  let imagenesRef = [];
+  let cargandoImagenes = false;
+  let intentoCargarImagenes = false;
 
   // Estado local para edición
   const editBloques = bloques.map(b => ({
@@ -260,6 +268,7 @@ function buildExpandPanel(nombrePatron, patron) {
           <input type="text" class="edit-nombre" data-i="${i}" value="${escapeHtml(b.nombre)}" />
         </div>
         <div class="expand-pags">Páginas: ${b.paginas.length ? b.paginas.join(", ") : "(sin asignar)"}</div>
+        ${renderPreviewBloque(b, i)}
         <div class="expand-reqs" id="expand-reqs-${i}">
           ${reqsHtml}
           <div class="expand-add-req">
@@ -297,6 +306,14 @@ function buildExpandPanel(nombrePatron, patron) {
       });
     });
 
+    panel.querySelectorAll(".expand-page-thumb").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const pagina = parseInt(btn.dataset.pagina, 10);
+        const img = imagenesRef.find(x => x.pagina === pagina);
+        if (!img?.base64) return;
+        abrirPreviewPagina(normalizarDataUrlImagen(img.base64), pagina);
+      });
+    });
     // Botones de acción al final
     const acciones = document.createElement("div");
     acciones.className = "expand-actions";
@@ -325,7 +342,58 @@ function buildExpandPanel(nombrePatron, patron) {
     render();
   }
 
+  function renderPreviewBloque(b, idx) {
+    if (!b.paginas.length) return "";
+    if (cargandoImagenes) {
+      return `<div class="expand-pages-preview muted">Cargando vistas de páginas…</div>`;
+    }
+    if (!imagenesRef.length) {
+      const msg = intentoCargarImagenes
+        ? "No hay imágenes guardadas para este mapeo. Usá Re-mapear para regenerar la referencia visual."
+        : "Preparando vistas de páginas…";
+      return `<div class="expand-pages-preview muted">${msg}</div>`;
+    }
+
+    const html = b.paginas.map(pag => {
+      const img = imagenesRef.find(x => x.pagina === pag);
+      if (!img?.base64) return `<span class="expand-page-missing">Pág. ${pag}</span>`;
+      return `
+        <button type="button" class="expand-page-thumb" data-bloque="${idx}" data-pagina="${pag}" title="Ver página ${pag}">
+          <span class="expand-page-doc">
+            <img src="${normalizarDataUrlImagen(img.base64)}" alt="Página ${pag}" />
+          </span>
+          <span>Pág. ${pag}</span>
+        </button>`;
+    }).join("");
+
+    return `<div class="expand-pages-preview">${html}</div>`;
+  }
+
+  async function cargarImagenesReferencia() {
+    if (intentoCargarImagenes || cargandoImagenes) return;
+    cargandoImagenes = true;
+    intentoCargarImagenes = true;
+    render();
+    try {
+      const r = await chrome.runtime.sendMessage({
+        action: "storage:descargarImagenesPatronRemoto",
+        payload: {
+          nombre: nombrePatron,
+          controlStorageRef: patron.controlStorageRef || null
+        }
+      });
+      imagenesRef = Array.isArray(r?.data?.imagenes) ? r.data.imagenes : [];
+    } catch (e) {
+      console.warn(`[MAU][MAPEOS] No se pudieron cargar imágenes de "${nombrePatron}"`, e);
+      imagenesRef = [];
+    } finally {
+      cargandoImagenes = false;
+      render();
+    }
+  }
+
   render();
+  cargarImagenesReferencia();
   return panel;
 }
 
@@ -366,7 +434,8 @@ async function guardarEdicionCard(nombrePatron, editBloques, patronOriginal) {
       nombre: nombrePatron,
       bloquesModal: bloquesActualizados,
       firmaTipos: patronOriginal.firmaTipos || [],
-      totalPaginas: patronOriginal.totalPaginas || 0
+      totalPaginas: patronOriginal.totalPaginas || 0,
+      controlStorageRef: rImg.data?.controlStorageRef || patronOriginal.controlStorageRef || null
     };
 
     const r = await chrome.runtime.sendMessage({ action: "storage:guardarPatronSabana", payload });
@@ -1069,7 +1138,8 @@ async function guardarNuevoMapeo() {
         nombre,
         bloquesModal: bloquesValidos,
         firmaTipos: [],
-        totalPaginas
+        totalPaginas,
+        controlStorageRef: rImg.data?.controlStorageRef || null
       }
     });
     if (!r1?.ok) throw new Error(r1?.error || "No se pudo guardar el patrón.");
@@ -1085,7 +1155,11 @@ async function guardarNuevoMapeo() {
     await cargarPatrones();
 
     // Ofrecer ir a Mis Mapeos
-    setTimeout(() => switchTab("mis-mapeos"), 1200);
+    setTimeout(() => {
+      expandedCard = nombre;
+      switchTab("mis-mapeos");
+      renderCards();
+    }, 1200);
 
   } catch (e) {
     saveStatus.textContent = "Error: " + e.message;
