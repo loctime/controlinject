@@ -16,6 +16,7 @@ let nuevoSeleccion = new Set();
 let nuevoBloques = [];            // [{ id, nombre, paginas, requerimientos }]
 let nuevoUltimoClic = null;
 let nuevoModoEdicion = null;      // { nombre, bloquesBase } si estamos editando un patron existente
+let sobresDisponibles = [];       // opciones del cmbSobre de CD
 
 // ── Elementos DOM ──
 const estadoEl = document.getElementById("estado");
@@ -211,7 +212,7 @@ function buildExpandPanel(nombrePatron, patron) {
         <div class="expand-reqs" id="expand-reqs-${i}">
           ${reqsHtml}
           <div class="expand-add-req">
-            <input type="text" class="add-req-input" data-i="${i}" placeholder="Agregar requerimiento…" />
+            <input type="text" class="add-req-input" data-i="${i}" placeholder="Agregar requerimiento…" list="dl-sobres" autocomplete="off" />
             <button class="alt sm btn-add-req" data-i="${i}">+</button>
           </div>
         </div>`;
@@ -387,6 +388,20 @@ document.getElementById("input-importar").addEventListener("change", async e => 
   }
   e.target.value = "";
 });
+
+// ─────────────────────────────────────────────
+//  SOBRES — carga desde CD y datalist
+// ─────────────────────────────────────────────
+async function cargarSobres() {
+  try {
+    const r = await chrome.runtime.sendMessage({ action: "mapeos:getSobres" });
+    sobresDisponibles = Array.isArray(r?.data) ? r.data : [];
+    const dl = document.getElementById("dl-sobres");
+    dl.innerHTML = sobresDisponibles.map(s => `<option value="${escapeHtml(s)}"></option>`).join("");
+  } catch {
+    // sin pestaña CD abierta — los inputs quedan libres igual
+  }
+}
 
 // ─────────────────────────────────────────────
 //  MAPPEAR NUEVO — setup de controles
@@ -649,7 +664,7 @@ function renderBloques() {
       <div class="ws-reqs-label">Requerimientos:</div>
       <div class="ws-reqs-chips">${reqsHtml}</div>
       <div class="ws-add-req">
-        <input type="text" class="bloque-add-req" data-bid="${b.id}" placeholder="Nombre del requerimiento…" />
+        <input type="text" class="bloque-add-req" data-bid="${b.id}" placeholder="Nombre del requerimiento…" list="dl-sobres" autocomplete="off" />
         <button class="alt sm bloque-btn-add-req" data-bid="${b.id}">+</button>
       </div>`;
 
@@ -792,7 +807,10 @@ async function init() {
     document.getElementById("tab-mis-mapeos").style.display = loggedIn ? "" : "none";
     document.getElementById("tab-nuevo").style.display = loggedIn ? "" : "none";
     document.querySelector('.tabs-nav').style.display = loggedIn ? "" : "none";
-    if (loggedIn) await cargarPatrones();
+    if (loggedIn) {
+      await cargarPatrones();
+      cargarSobres(); // sin await — no bloquea la carga
+    }
   } catch {
     document.getElementById("no-sesion").style.display = "flex";
     document.querySelector('.tabs-nav').style.display = "none";

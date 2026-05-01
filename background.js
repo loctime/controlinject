@@ -644,6 +644,22 @@ async function manejarMensaje(mensaje) {
     return await renderPdfParaMapeos(base64, escala, tabIdExterno);
   }
 
+  if (accion === "mapeos:getSobres") {
+    const { tabId } = await tgConseguirTabControldoc();
+    const [{ result } = {}] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: () => {
+        const sel = document.getElementById("ctl00_ContentPlaceHolderMain_cmbSobre");
+        if (!sel) return [];
+        return [...sel.options]
+          .map(o => o.text.trim())
+          .filter(t => t && t !== "-" && t.toLowerCase() !== "todos");
+      }
+    });
+    return Array.isArray(result) ? result : [];
+  }
+
   if (accion === "storage:exportarMapeo") {
     const data = await chrome.storage.local.get([KEY_PATRONES_SABANA, KEY_MAPEOS]);
     return {
