@@ -14,6 +14,7 @@ let nuevoFile = null;
 let nuevoImagenes = [];           // [{ pagina, base64 }] — todas las páginas renderizadas
 let nuevoSeleccion = new Set();
 let nuevoBloques = [];            // [{ id, nombre, paginas, requerimientos }]
+let nuevoBloquesResaltados = new Set();
 let nuevoUltimoClic = null;
 let nuevoModoEdicion = null;      // { nombre, bloquesBase, controlStorageRef }
 let sobresDisponibles = [];       // opciones del cmbSobre de CD
@@ -112,6 +113,7 @@ function abrirWorkspaceConImagenes({ nombre, imagenes, bloques, status, fileLabe
         .sort((a, b) => a.pagina - b.pagina)
     : [];
   nuevoSeleccion.clear();
+  nuevoBloquesResaltados.clear();
   nuevoUltimoClic = null;
   nuevoPreviewCache.clear();
   nuevoBloques = Array.isArray(bloques) ? bloques : [];
@@ -613,26 +615,17 @@ async function cargarSobres() {
 // ─────────────────────────────────────────────
 const dropzone = document.getElementById("nuevo-dropzone");
 const fileInput = document.getElementById("nuevo-file-input");
-const extraFileInput = document.getElementById("nuevo-extra-file-input");
 
 document.getElementById("nuevo-btn-pdf").addEventListener("click", () => fileInput.click());
 document.getElementById("ws-cambiar-pdf").addEventListener("click", () => {
   resetearWorkspace();
   fileInput.click();
 });
-document.getElementById("ws-agregar-pdf").addEventListener("click", () => extraFileInput.click());
 
 fileInput.addEventListener("change", () => {
   const files = [...(fileInput.files || [])].filter(f => /\.pdf$/i.test(f.name));
-  if (files.length === 1) cargarPDF(files[0]);
-  else if (files.length > 1) cargarMultiplesPDF(files);
+  if (files.length) manejarCargaPrincipalArchivos(files);
   fileInput.value = "";
-});
-
-extraFileInput.addEventListener("change", async () => {
-  const files = [...(extraFileInput.files || [])].filter(f => /\.pdf$/i.test(f.name));
-  if (files.length) await agregarArchivosAlMapeo(files);
-  extraFileInput.value = "";
 });
 
 // Drag & drop en el dropzone
@@ -660,6 +653,7 @@ async function cargarPDF(file) {
   nuevoFile = file;
   nuevoPdfPreviewDisponible = true;
   nuevoSeleccion.clear();
+  nuevoBloquesResaltados.clear();
   nuevoBloques = [];
   nuevoPreviewCache.clear();
   nuevoFuentes = [file.name];
@@ -688,6 +682,23 @@ async function cargarPDF(file) {
     setWsStatus("Error: " + e.message);
     mostrar("No se pudo renderizar el PDF: " + e.message, "err");
   }
+}
+
+async function manejarCargaPrincipalArchivos(files) {
+  const pdfs = (files || []).filter(f => /\.pdf$/i.test(f.name));
+  if (!pdfs.length) return;
+
+  if (nuevoImagenes.length) {
+    await agregarArchivosAlMapeo(pdfs);
+    return;
+  }
+
+  if (pdfs.length === 1) {
+    await cargarPDF(pdfs[0]);
+    return;
+  }
+
+  await cargarMultiplesPDF(pdfs);
 }
 
 async function cargarMultiplesPDF(files) {
@@ -746,7 +757,7 @@ async function cargarMultiplesPDF(files) {
 
 async function agregarArchivosAlMapeo(files) {
   if (!nuevoImagenes.length) {
-    mostrar("Primero cargá o abrí un mapeo antes de agregar archivos.", "err");
+    mostrar("Primero subí archivos o abrí un mapeo.", "err");
     return;
   }
 
@@ -828,6 +839,7 @@ function resetearWorkspace() {
   nuevoPdfPreviewDisponible = false;
   nuevoPreviewCache.clear();
   nuevoSeleccion.clear();
+  nuevoBloquesResaltados.clear();
   nuevoBloques = [];
   nuevoUltimoClic = null;
 
@@ -1077,6 +1089,20 @@ function abrirPreviewPagina(dataUrl, pagina) {
 
 function manejarClicThumb(e, pagina) {
   const asignadas = paginasAsignadas();
+  const bloquesDeEsta = nuevoBloques.filter(b => b.paginas.includes(pagina));
+
+  if (bloquesDeEsta.length) {
+    nuevoBloquesResaltados = new Set(bloquesDeEsta.map(b => b.id));
+    nuevoSeleccion.clear();
+    nuevoUltimoClic = pagina;
+    refrescarThumbsVisual();
+    actualizarInfoSeleccion();
+    renderBloques();
+    desplazarABloqueResaltado();
+    return;
+  }
+
+  nuevoBloquesResaltados.clear();
 
   if (e.shiftKey && nuevoUltimoClic != null) {
     const desde = Math.min(nuevoUltimoClic, pagina);
@@ -1107,6 +1133,7 @@ function refrescarThumbsVisual() {
 
     const bloquesDeEsta = nuevoBloques.filter(b => b.paginas.includes(pag));
     el.classList.toggle("assigned", bloquesDeEsta.length > 0 && !sel);
+    el.classList.toggle("focused", bloquesDeEsta.some(b => nuevoBloquesResaltados.has(b.id)));
     if (bloquesDeEsta.length > 0 && sel) {
       nuevoSeleccion.delete(pag);
       el.classList.remove("selected");
@@ -1129,10 +1156,13 @@ function refrescarThumbsVisual() {
 
 function actualizarInfoSeleccion() {
   const n = nuevoSeleccion.size;
+  const resaltados = nuevoBloques.filter(b => nuevoBloquesResaltados.has(b.id));
   document.getElementById("ws-sel-info").textContent =
-    n === 0
-      ? "Seleccioná páginas a la izquierda"
-      : `${n} página(s) seleccionada(s): ${[...nuevoSeleccion].sort((a, b) => a - b).join(", ")}`;
+    resaltados.length
+      ? `Bloque resaltado: ${resaltados.map(b => b.nombre).join(" · ")}`
+      : n === 0
+        ? "Seleccioná páginas a la izquierda"
+        : `${n} página(s) seleccionada(s): ${[...nuevoSeleccion].sort((a, b) => a - b).join(", ")}`;
   document.getElementById("ws-crear-bloque").disabled = n === 0;
 }
 
@@ -1158,6 +1188,7 @@ function crearBloqueConSeleccion() {
     return;
   }
   const id = siguienteId();
+  nuevoBloquesResaltados.clear();
   nuevoBloques.push({
     id,
     nombre: `Bloque ${id}`,
@@ -1186,6 +1217,7 @@ function renderBloques() {
 
     const activo = b.paginas.some(p => nuevoSeleccion.has(p));
     if (activo) div.classList.add("active");
+    if (nuevoBloquesResaltados.has(b.id)) div.classList.add("focused");
 
     const reqsHtml = b.requerimientos.map((r, ri) => `
       <span class="req-chip" style="font-size:11px;">
@@ -1220,9 +1252,11 @@ function renderBloques() {
 
   lista.querySelectorAll(".ws-bloque-del").forEach(btn => {
     btn.addEventListener("click", () => {
+      nuevoBloquesResaltados.delete(parseInt(btn.dataset.bid));
       nuevoBloques = nuevoBloques.filter(x => x.id !== parseInt(btn.dataset.bid));
       renderBloques();
       refrescarThumbsVisual();
+      actualizarInfoSeleccion();
     });
   });
 
@@ -1245,6 +1279,13 @@ function renderBloques() {
       if (e.key === "Enter") agregarReqBloque(parseInt(inp.dataset.bid));
     });
   });
+}
+
+function desplazarABloqueResaltado() {
+  const primerId = [...nuevoBloquesResaltados][0];
+  if (!primerId) return;
+  const el = document.querySelector(`.ws-bloque[data-id="${primerId}"]`);
+  el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 function agregarReqBloque(bid) {

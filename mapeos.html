@@ -474,6 +474,10 @@
       object-fit: cover;
       display: block;
     }
+    .thumb.focused .thumb-doc {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(43,123,230,0.18), 0 2px 8px rgba(0,0,0,0.25);
+    }
     .thumb-doc::after {
       content: '';
       position: absolute;
@@ -691,6 +695,11 @@
     }
 
     .ws-bloque.active { border-color: var(--primary); background: #eef4ff; }
+    .ws-bloque.focused {
+      border-color: var(--green);
+      background: #f0fdf6;
+      box-shadow: 0 0 0 3px rgba(18,163,90,0.12);
+    }
 
     .ws-bloque-header {
       display: flex;
@@ -869,9 +878,8 @@
     <div class="nuevo-bar">
       <label for="nuevo-nombre">Nombre:</label>
       <input type="text" id="nuevo-nombre" placeholder="Ej: Recibos Empresa SA" autocomplete="off" />
-      <button id="nuevo-btn-pdf" class="green">📄 Cargar PDF de referencia</button>
+      <button id="nuevo-btn-pdf" class="green">📄 Subir archivos</button>
       <input id="nuevo-file-input" type="file" accept=".pdf" multiple />
-      <input id="nuevo-extra-file-input" type="file" accept=".pdf" multiple />
     </div>
 
     <!-- Dropzone (visible sin PDF) -->
@@ -879,7 +887,7 @@
       <div class="dropzone-inner">
         <span class="dropzone-icon">📂</span>
         <p>Arrastrá el PDF de referencia acá</p>
-        <small>o usá el botón "Cargar PDF de referencia"</small>
+        <small>o usá el botón "Subir archivos"</small>
       </div>
     </div>
 
@@ -888,7 +896,6 @@
       <div class="ws-bar">
         <span class="ws-filename" id="ws-filename"></span>
         <span class="ws-status" id="ws-status"></span>
-        <button id="ws-agregar-pdf" class="alt sm">Agregar archivos</button>
         <button id="ws-cambiar-pdf" class="alt sm">Cambiar PDF</button>
       </div>
       <div class="ws-body">
