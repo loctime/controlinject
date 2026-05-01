@@ -319,6 +319,27 @@
     return n;
   }
 
+  function paginasAsignadas(exceptId = null) {
+    const set = new Set();
+    for (const b of ctx.bloques) {
+      if (exceptId != null && b.id === exceptId) continue;
+      (b.paginas || []).forEach((p) => set.add(p));
+    }
+    return set;
+  }
+
+  function paginasDuplicadas() {
+    const vistas = new Set();
+    const duplicadas = new Set();
+    for (const b of ctx.bloques) {
+      for (const p of b.paginas || []) {
+        if (vistas.has(p)) duplicadas.add(p);
+        vistas.add(p);
+      }
+    }
+    return [...duplicadas].sort((a, b) => a - b);
+  }
+
   function cargarBloquesIniciales() {
     ctx.bloques = ctx.bloquesIniciales.map((b, i) => ({
       id: i + 1,
@@ -416,6 +437,10 @@
       chk.title = "Seleccionar página";
       chk.addEventListener("click", (ev) => {
         ev.stopPropagation();
+        if (paginasAsignadas().has(i)) {
+          chk.checked = false;
+          return;
+        }
         if (chk.checked) ctx.seleccion.add(i);
         else ctx.seleccion.delete(i);
         ultimoClic = i;
@@ -456,40 +481,23 @@
   let ultimoClic = null;
   function manejarClicThumb(ev, pagina) {
     const bloquesDeEstaPagina = ctx.bloques.filter((b) => b.paginas.includes(pagina));
-    const paginasDeLosBloques = () => {
-      const set = new Set();
-      for (const b of bloquesDeEstaPagina) b.paginas.forEach(p => set.add(p));
-      return set;
-    };
+    if (bloquesDeEstaPagina.length > 0) return;
+    const asignadas = paginasAsignadas();
 
     if (ev.shiftKey && ultimoClic != null) {
       const desde = Math.min(ultimoClic, pagina);
       const hasta = Math.max(ultimoClic, pagina);
-      for (let i = desde; i <= hasta; i++) ctx.seleccion.add(i);
-    } else if (ev.ctrlKey || ev.metaKey) {
-      if (bloquesDeEstaPagina.length > 0) {
-        const todas = paginasDeLosBloques();
-        const todasSel = [...todas].every((p) => ctx.seleccion.has(p));
-        for (const p of todas) {
-          if (todasSel) ctx.seleccion.delete(p); else ctx.seleccion.add(p);
-        }
-      } else {
-        if (ctx.seleccion.has(pagina)) ctx.seleccion.delete(pagina);
-        else ctx.seleccion.add(pagina);
+      for (let i = desde; i <= hasta; i++) {
+        if (!asignadas.has(i)) ctx.seleccion.add(i);
       }
+    } else if (ev.ctrlKey || ev.metaKey) {
+      if (ctx.seleccion.has(pagina)) ctx.seleccion.delete(pagina);
+      else ctx.seleccion.add(pagina);
       ultimoClic = pagina;
     } else {
       // Click simple = toggle (igual que el checkbox), sin borrar el resto
-      if (bloquesDeEstaPagina.length > 0) {
-        const todas = paginasDeLosBloques();
-        const todasSel = [...todas].every((p) => ctx.seleccion.has(p));
-        for (const p of todas) {
-          if (todasSel) ctx.seleccion.delete(p); else ctx.seleccion.add(p);
-        }
-      } else {
-        if (ctx.seleccion.has(pagina)) ctx.seleccion.delete(pagina);
-        else ctx.seleccion.add(pagina);
-      }
+      if (ctx.seleccion.has(pagina)) ctx.seleccion.delete(pagina);
+      else ctx.seleccion.add(pagina);
       ultimoClic = pagina;
     }
     refrescarSeleccionVisual();
@@ -596,6 +604,11 @@
       const bloquesDeEsta = ctx.bloques
         .map((b, idx) => ({ b, idx }))
         .filter(({ b }) => b.paginas.includes(pag));
+      if (bloquesDeEsta.length > 0 && esSel) {
+        ctx.seleccion.delete(pag);
+        el.classList.remove("sel");
+        if (chk) chk.checked = false;
+      }
       el.classList.toggle("asignada", bloquesDeEsta.length > 0);
       const tagEl = el.querySelector(".mau-thumb-tag");
       if (tagEl) {
@@ -650,7 +663,15 @@
 
   function crearBloqueConSeleccion() {
     if (!ctx.seleccion.size) return;
-    const paginas = [...ctx.seleccion].sort((a, b) => a - b);
+    const asignadas = paginasAsignadas();
+    const paginas = [...ctx.seleccion].filter((p) => !asignadas.has(p)).sort((a, b) => a - b);
+    if (!paginas.length) {
+      ctx.seleccion.clear();
+      refrescarSeleccionVisual();
+      actualizarInfoSeleccion();
+      alert("Las páginas seleccionadas ya pertenecen a otro bloque.");
+      return;
+    }
 
     // Calcular meta consolidado desde textosPorPagina
     const meta = consolidarMeta(paginas);
@@ -785,9 +806,16 @@
 
   async function confirmar() {
     // Validación básica
+    const duplicadas = paginasDuplicadas();
+    if (duplicadas.length) {
+      alert(`Hay páginas asignadas a más de un bloque: ${duplicadas.join(", ")}. Cada página debe pertenecer a un solo bloque.`);
+      return;
+    }
+
     const sinReq = ctx.bloques.filter((b) => !b.requerimientos.length && !esDesestimar(b));
     if (sinReq.length) {
-      if (!confirm(`Hay ${sinReq.length} bloque(s) sin requerimiento asignado. ¿Querés confirmar igual? (se ignorarán)`)) return;
+      alert(`Hay ${sinReq.length} bloque(s) sin requerimiento asignado. Asigná un requerimiento o marcá el bloque como Desestimar/Descartar.`);
+      return;
     }
     if (!ctx.bloques.length) {
       alert("Armá al menos un bloque antes de confirmar.");

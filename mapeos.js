@@ -35,6 +35,47 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
 
+function paginasAsignadas(exceptId = null) {
+  const set = new Set();
+  for (const b of nuevoBloques) {
+    if (exceptId != null && b.id === exceptId) continue;
+    (b.paginas || []).forEach(p => set.add(p));
+  }
+  return set;
+}
+
+function paginasDuplicadasEnBloques(bloques) {
+  const vistas = new Set();
+  const duplicadas = new Set();
+  for (const b of bloques || []) {
+    for (const p of b.paginas || []) {
+      if (vistas.has(p)) duplicadas.add(p);
+      vistas.add(p);
+    }
+  }
+  return [...duplicadas].sort((a, b) => a - b);
+}
+
+function validarBloquesMapeo(bloques, { permitirSinRequerimiento = false } = {}) {
+  const validos = (bloques || []).filter(b => (b.paginas || []).length > 0);
+  if (!validos.length) return "Armá al menos un bloque con páginas antes de guardar.";
+
+  const duplicadas = paginasDuplicadasEnBloques(validos);
+  if (duplicadas.length) {
+    return `Hay páginas asignadas a más de un bloque: ${duplicadas.join(", ")}. Cada página debe pertenecer a un solo bloque.`;
+  }
+
+  if (!permitirSinRequerimiento) {
+    const sinReq = validos.filter(b => !(b.requerimientos || []).length);
+    if (sinReq.length) {
+      const nombres = sinReq.map(b => b.nombre || `Bloque ${b.id || ""}`.trim()).join(", ");
+      return `Hay bloque(s) sin requerimientos: ${nombres}. Asigná al menos un requerimiento o eliminá esos bloques.`;
+    }
+  }
+
+  return "";
+}
+
 function formatFecha(ts) {
   if (!ts) return null;
   try { return new Date(ts).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }); }
@@ -288,6 +329,29 @@ async function guardarEdicionCard(nombrePatron, editBloques, patronOriginal) {
       requerimientos: b.requerimientos,
       meta: b.meta
     }));
+
+    const errorValidacion = validarBloquesMapeo(bloquesActualizados);
+    if (errorValidacion) throw new Error(errorValidacion);
+
+    mostrar("Actualizando referencia remota…", "");
+    const refRemota = await chrome.runtime.sendMessage({
+      action: "storage:descargarImagenesPatronRemoto",
+      payload: { nombre: nombrePatron }
+    });
+    const imagenesRef = refRemota?.data?.imagenes || [];
+    if (!refRemota?.ok || !imagenesRef.length) {
+      throw new Error(refRemota?.error || "No se encontraron imágenes remotas para actualizar este mapeo.");
+    }
+
+    const rImg = await chrome.runtime.sendMessage({
+      action: "storage:guardarImagenesPatronRemoto",
+      payload: {
+        nombre: nombrePatron,
+        imagenes: imagenesRef,
+        bloques: bloquesActualizados
+      }
+    });
+    if (!rImg?.ok) throw new Error(rImg?.error || "No se pudo actualizar la referencia remota.");
 
     const payload = {
       nombre: nombrePatron,
@@ -750,15 +814,21 @@ function abrirPreviewPagina(dataUrl, pagina) {
 }
 
 function manejarClicThumb(e, pagina) {
+  const asignadas = paginasAsignadas();
+
   if (e.shiftKey && nuevoUltimoClic != null) {
     const desde = Math.min(nuevoUltimoClic, pagina);
     const hasta = Math.max(nuevoUltimoClic, pagina);
-    for (let i = desde; i <= hasta; i++) nuevoSeleccion.add(i);
+    for (let i = desde; i <= hasta; i++) {
+      if (!asignadas.has(i)) nuevoSeleccion.add(i);
+    }
   } else if (e.ctrlKey || e.metaKey) {
+    if (asignadas.has(pagina)) return;
     if (nuevoSeleccion.has(pagina)) nuevoSeleccion.delete(pagina);
     else nuevoSeleccion.add(pagina);
   } else {
     // toggle simple
+    if (asignadas.has(pagina)) return;
     if (nuevoSeleccion.has(pagina)) nuevoSeleccion.delete(pagina);
     else nuevoSeleccion.add(pagina);
   }
@@ -775,6 +845,11 @@ function refrescarThumbsVisual() {
 
     const bloquesDeEsta = nuevoBloques.filter(b => b.paginas.includes(pag));
     el.classList.toggle("assigned", bloquesDeEsta.length > 0 && !sel);
+    if (bloquesDeEsta.length > 0 && sel) {
+      nuevoSeleccion.delete(pag);
+      el.classList.remove("selected");
+      el.classList.add("assigned");
+    }
 
     const badge = el.querySelector(".thumb-badge");
     if (badge) badge.textContent = "\u2713";
@@ -811,10 +886,19 @@ function siguienteId() {
 
 function crearBloqueConSeleccion() {
   if (!nuevoSeleccion.size) return;
-  const paginas = [...nuevoSeleccion].sort((a, b) => a - b);
+  const asignadas = paginasAsignadas();
+  const paginas = [...nuevoSeleccion].filter(p => !asignadas.has(p)).sort((a, b) => a - b);
+  if (!paginas.length) {
+    nuevoSeleccion.clear();
+    refrescarThumbsVisual();
+    actualizarInfoSeleccion();
+    mostrar("Las páginas seleccionadas ya pertenecen a otro bloque.", "err");
+    return;
+  }
+  const id = siguienteId();
   nuevoBloques.push({
-    id: siguienteId(),
-    nombre: `Bloque ${siguienteId()}`,
+    id,
+    nombre: `Bloque ${id}`,
     paginas,
     requerimientos: []
   });
@@ -936,11 +1020,31 @@ async function guardarNuevoMapeo() {
   }
 
   const bloquesValidos = nuevoBloques.filter(b => b.paginas.length > 0);
+  const errorValidacion = validarBloquesMapeo(bloquesValidos);
+  if (errorValidacion) {
+    mostrar(errorValidacion, "err");
+    saveStatus.textContent = errorValidacion;
+    saveStatus.className = "ws-save-status err";
+    return;
+  }
 
   saveStatus.textContent = "Guardando patrón…";
   saveStatus.className = "ws-save-status";
 
   try {
+    saveStatus.textContent = "Subiendo imágenes de referencia…";
+    const rImg = await chrome.runtime.sendMessage({
+      action: "storage:guardarImagenesPatronRemoto",
+      payload: {
+        nombre,
+        imagenes: nuevoImagenes,
+        bloques: bloquesValidos
+      }
+    });
+    if (!rImg?.ok) throw new Error(rImg?.error || "No se pudieron subir las imágenes de referencia.");
+
+    saveStatus.textContent = "Guardando patrón…";
+
     // 1) Guardar patrón en chrome.storage
     const totalPaginas = nuevoImagenes.length;
     const r1 = await chrome.runtime.sendMessage({
@@ -953,21 +1057,6 @@ async function guardarNuevoMapeo() {
       }
     });
     if (!r1?.ok) throw new Error(r1?.error || "No se pudo guardar el patrón.");
-
-    // 2) Guardar imágenes de referencia en remoto
-    saveStatus.textContent = "Subiendo imágenes de referencia…";
-    try {
-      await chrome.runtime.sendMessage({
-        action: "storage:guardarImagenesPatronRemoto",
-        payload: {
-          nombre,
-          imagenes: nuevoImagenes,
-          bloques: bloquesValidos
-        }
-      });
-    } catch (imgErr) {
-      console.warn("[MAU][MAPEOS] No se pudieron subir imágenes remotas:", imgErr);
-    }
 
     saveStatus.textContent = `"${nombre}" guardado ✓`;
     saveStatus.className = "ws-save-status ok";
