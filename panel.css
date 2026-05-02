@@ -24,7 +24,7 @@
 /* ---- Panel principal ---- */
 .mau-panel {
   position: fixed;
-  top: 60px;
+  top: 10px;
   right: 16px;
   width: 620px;
   max-height: 92vh;
@@ -57,6 +57,8 @@
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   border-radius: 16px 16px 0 0;
   flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
 }
 .mau-header-logo {
   border-radius: 6px;

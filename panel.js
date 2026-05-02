@@ -21,6 +21,7 @@
 
   const ui = {
     panel: document.getElementById("docauto-panel"),
+    headerToggle: document.getElementById("mau-header-toggle"),
     minimizar: document.getElementById("mau-minimizar"),
     btnSettings: document.getElementById("mau-btn-settings"),
     btnMapeos: document.getElementById("mau-btn-mapeos"),
@@ -156,7 +157,11 @@
   });
 
 
-  ui.minimizar.addEventListener("click", () => {
+  // Header toggle para expandir/contraer
+  ui.headerToggle.addEventListener("click", (e) => {
+    // Si el click es en un botón interno, no hacer toggle
+    if (e.target.closest("button")) return;
+    
     const body = ui.panel.querySelector(".mau-body");
     body.style.display = body.style.display === "none" ? "block" : "none";
   });
