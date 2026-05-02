@@ -21,12 +21,17 @@ let sobresDisponibles = [];       // opciones del cmbSobre de CD
 let nuevoPreviewCache = new Map(); // pagina -> dataUrl en alta resolucion para preview
 let nuevoFuentes = [];
 let nuevoPdfPreviewDisponible = false;
+let nuevoPaginasMetaCache = new Map(); // pagina+imagen -> firma leida en esta sesion
+let guardadoEnCurso = false;
+let guardadoCancelado = false;
 
 // ── Elementos DOM ──
 const estadoEl = document.getElementById("estado");
 const wsFilenameEl = document.getElementById("ws-filename");
 const wsStatusEl = document.getElementById("ws-status");
 const wsCambiarPdfEl = document.getElementById("ws-cambiar-pdf");
+const wsLoadingSubmsgEl = document.getElementById("ws-loading-submsg");
+const wsLoadingCancelEl = document.getElementById("ws-loading-cancel");
 
 // ─────────────────────────────────────────────
 //  UTILIDADES
@@ -55,6 +60,49 @@ function escapeHtml(s) {
 function normalizarDataUrlImagen(base64, mediaType = "image/jpeg") {
   const s = String(base64 || "");
   return s.startsWith("data:") ? s : `data:${mediaType};base64,${s}`;
+}
+
+function mostrarLoader(msg = "Cargando…", opciones = {}) {
+  if (wsLoadingMsgEl) wsLoadingMsgEl.textContent = msg;
+  if (wsLoadingSubmsgEl) {
+    wsLoadingSubmsgEl.textContent = opciones.submsg || "";
+    wsLoadingSubmsgEl.style.display = opciones.submsg ? "" : "none";
+  }
+  if (wsLoadingCancelEl) {
+    wsLoadingCancelEl.style.display = opciones.cancelable ? "" : "none";
+    wsLoadingCancelEl.disabled = false;
+  }
+  if (wsLoadingEl) wsLoadingEl.style.display = "flex";
+}
+
+function ocultarLoader() {
+  if (wsLoadingEl) wsLoadingEl.style.display = "none";
+  if (wsLoadingSubmsgEl) {
+    wsLoadingSubmsgEl.textContent = "";
+    wsLoadingSubmsgEl.style.display = "none";
+  }
+  if (wsLoadingCancelEl) {
+    wsLoadingCancelEl.style.display = "none";
+    wsLoadingCancelEl.disabled = false;
+  }
+}
+
+function setWorkspaceBusyState(busy) {
+  guardadoEnCurso = !!busy;
+  ["#nuevo-nombre", "#nuevo-btn-pdf", "#ws-cambiar-pdf", "#ws-crear-bloque", "#ws-btn-guardar"].forEach((sel) => {
+    const el = document.querySelector(sel);
+    if (el && "disabled" in el) el.disabled = !!busy;
+  });
+  ["#nuevo-dropzone", "#ws-thumbs-grid", "#ws-bloques-list", ".nuevo-bar"].forEach((sel) => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.style.pointerEvents = busy ? "none" : "";
+  });
+}
+
+function buildPaginaMetaCacheKey(pagina, base64) {
+  const s = String(base64 || "");
+  return `${pagina}::${s.length}::${s.slice(0, 96)}`;
 }
 
 function paginasAsignadas(exceptId = null) {
@@ -125,33 +173,58 @@ async function construirPaginasMetaParaBloques(bloques, imagenes, onProgress) {
   )].sort((a, b) => a - b);
 
   const metaPorPagina = new Map();
-  let idx = 0;
-  for (const pagina of paginasUnicas) {
-    idx++;
-    if (typeof onProgress === "function") {
-      onProgress({ pagina, actual: idx, total: paginasUnicas.length });
+  let completadas = 0;
+  let cursor = 0;
+  const concurrencia = Math.min(3, Math.max(1, paginasUnicas.length));
+
+  const worker = async () => {
+    while (true) {
+      if (guardadoCancelado) throw new Error("Guardado cancelado por el usuario.");
+      const idx = cursor++;
+      if (idx >= paginasUnicas.length) return;
+
+      const pagina = paginasUnicas[idx];
+      const base64 = imagenPorPagina.get(pagina);
+      if (!base64) {
+        metaPorPagina.set(pagina, { pagina, textoEstable: "", marcaPagina: "" });
+        completadas++;
+        if (typeof onProgress === "function") onProgress({ pagina, actual: completadas, total: paginasUnicas.length });
+        continue;
+      }
+
+      const cacheKey = buildPaginaMetaCacheKey(pagina, base64);
+      const cached = nuevoPaginasMetaCache.get(cacheKey);
+      if (cached) {
+        metaPorPagina.set(pagina, { pagina, ...cached });
+        completadas++;
+        if (typeof onProgress === "function") onProgress({ pagina, actual: completadas, total: paginasUnicas.length, fromCache: true });
+        continue;
+      }
+
+      try {
+        const r = await chrome.runtime.sendMessage({
+          action: "ai:extraerMetadataPagina",
+          payload: { base64, mediaType: "image/jpeg" }
+        });
+        if (guardadoCancelado) throw new Error("Guardado cancelado por el usuario.");
+        const data = {
+          textoEstable: String(r?.data?.textoEstable || "").trim(),
+          marcaPagina: String(r?.data?.marcaPagina || "").trim()
+        };
+        nuevoPaginasMetaCache.set(cacheKey, data);
+        metaPorPagina.set(pagina, { pagina, ...data });
+      } catch (e) {
+        if (/cancelado por el usuario/i.test(String(e?.message || ""))) throw e;
+        console.warn(`[MAU][MAPEOS] No se pudo extraer firma de la pagina ${pagina}:`, e);
+        metaPorPagina.set(pagina, { pagina, textoEstable: "", marcaPagina: "" });
+      }
+
+      completadas++;
+      if (typeof onProgress === "function") onProgress({ pagina, actual: completadas, total: paginasUnicas.length });
     }
-    const base64 = imagenPorPagina.get(pagina);
-    if (!base64) {
-      metaPorPagina.set(pagina, { pagina, textoEstable: "", marcaPagina: "" });
-      continue;
-    }
-    try {
-      const r = await chrome.runtime.sendMessage({
-        action: "ai:extraerMetadataPagina",
-        payload: { base64, mediaType: "image/jpeg" }
-      });
-      const data = r?.data || {};
-      metaPorPagina.set(pagina, {
-        pagina,
-        textoEstable: String(data.textoEstable || "").trim(),
-        marcaPagina: String(data.marcaPagina || "").trim()
-      });
-    } catch (e) {
-      console.warn(`[MAU][MAPEOS] No se pudo extraer firma de la página ${pagina}:`, e);
-      metaPorPagina.set(pagina, { pagina, textoEstable: "", marcaPagina: "" });
-    }
-  }
+  };
+
+  await Promise.all(Array.from({ length: concurrencia }, () => worker()));
 
   return (bloques || []).map((b) => {
     const paginasOrdenadas = [...(b.paginas || [])].sort((a, b) => a - b);
@@ -931,6 +1004,7 @@ function resetearWorkspace() {
   nuevoFuentes = [];
   nuevoPdfPreviewDisponible = false;
   nuevoPreviewCache.clear();
+  nuevoPaginasMetaCache.clear();
   nuevoSeleccion.clear();
   nuevoBloquesResaltados.clear();
   nuevoBloques = [];
@@ -1502,6 +1576,126 @@ async function guardarNuevoMapeo() {
 // ─────────────────────────────────────────────
 //  INIT
 // ─────────────────────────────────────────────
+if (wsLoadingCancelEl) {
+  wsLoadingCancelEl.addEventListener("click", () => {
+    guardadoCancelado = true;
+    wsLoadingCancelEl.disabled = true;
+    if (wsLoadingSubmsgEl) wsLoadingSubmsgEl.textContent = "Cancelando al terminar las lecturas en curso…";
+  });
+}
+
+async function guardarNuevoMapeo() {
+  if (guardadoEnCurso) return;
+  const nombre = document.getElementById("nuevo-nombre").value.trim();
+  const saveStatus = document.getElementById("ws-save-status");
+
+  if (!nombre) {
+    mostrar("Ingresá un nombre para el mapeo.", "err");
+    document.getElementById("nuevo-nombre").focus();
+    return;
+  }
+  if (!nuevoBloques.length) {
+    mostrar("Armá al menos un bloque antes de guardar.", "err");
+    return;
+  }
+  const bloquesSinPags = nuevoBloques.filter(b => !b.paginas.length);
+  if (bloquesSinPags.length) {
+    if (!confirm(`${bloquesSinPags.length} bloque(s) no tienen páginas asignadas y se ignorarán. ¿Continuar?`)) return;
+  }
+
+  const bloquesValidos = nuevoBloques.filter(b => b.paginas.length > 0);
+  const errorValidacion = validarBloquesMapeo(bloquesValidos);
+  if (errorValidacion) {
+    mostrar(errorValidacion, "err");
+    saveStatus.textContent = errorValidacion;
+    saveStatus.className = "ws-save-status err";
+    return;
+  }
+
+  guardadoCancelado = false;
+  setWorkspaceBusyState(true);
+  saveStatus.textContent = "Guardando patrón…";
+  saveStatus.className = "ws-save-status";
+  mostrarLoader("Guardando mapeo…", {
+    submsg: "Leyendo firmas por página y subiendo la referencia. No cierres esta pantalla.",
+    cancelable: true
+  });
+
+  try {
+    const bloquesConPaginasMeta = await construirPaginasMetaParaBloques(
+      bloquesValidos,
+      nuevoImagenes,
+      ({ actual, total, pagina, fromCache }) => {
+        const cacheStr = fromCache ? " · caché" : "";
+        saveStatus.textContent = `Leyendo firmas por página… ${actual}/${total} (pág. ${pagina}${cacheStr})`;
+        mostrarLoader("Guardando mapeo…", {
+          submsg: `Leyendo firmas por página… ${actual}/${total} (pág. ${pagina}${cacheStr})`,
+          cancelable: true
+        });
+      }
+    );
+    if (guardadoCancelado) throw new Error("Guardado cancelado por el usuario.");
+
+    saveStatus.textContent = "Subiendo imágenes de referencia…";
+    mostrarLoader("Guardando mapeo…", {
+      submsg: "Subiendo imágenes de referencia…",
+      cancelable: true
+    });
+    const paginasMapeadas = new Set(bloquesConPaginasMeta.flatMap(b => b.paginas));
+    const imagenesFiltradas = nuevoImagenes.filter(img => paginasMapeadas.has(img.pagina));
+    const rImg = await chrome.runtime.sendMessage({
+      action: "storage:guardarImagenesPatronRemoto",
+      payload: {
+        nombre,
+        imagenes: imagenesFiltradas,
+        bloques: bloquesConPaginasMeta
+      }
+    });
+    if (!rImg?.ok) throw new Error(rImg?.error || "No se pudieron subir las imágenes de referencia.");
+    if (guardadoCancelado) throw new Error("Guardado cancelado por el usuario.");
+
+    saveStatus.textContent = "Guardando patrón…";
+    mostrarLoader("Guardando mapeo…", {
+      submsg: "Guardando patrón…",
+      cancelable: true
+    });
+    const totalPaginas = imagenesFiltradas.length;
+    const r1 = await chrome.runtime.sendMessage({
+      action: "storage:guardarPatronSabana",
+      payload: {
+        nombre,
+        bloquesModal: bloquesConPaginasMeta,
+        firmaTipos: [],
+        totalPaginas,
+        controlStorageRef: rImg.data?.controlStorageRef || null
+      }
+    });
+    if (!r1?.ok) throw new Error(r1?.error || "No se pudo guardar el patrón.");
+    if (guardadoCancelado) throw new Error("Guardado cancelado por el usuario.");
+
+    saveStatus.textContent = `"${nombre}" guardado ✓`;
+    saveStatus.className = "ws-save-status ok";
+    mostrar(`Mapeo "${nombre}" guardado correctamente.`, "ok");
+    nuevoModoEdicion = null;
+    await cargarPatrones();
+
+    setTimeout(() => {
+      expandedCard = null;
+      switchTab("mis-mapeos");
+      renderCards();
+    }, 1200);
+  } catch (e) {
+    const esCancel = /cancelado por el usuario/i.test(String(e?.message || ""));
+    saveStatus.textContent = esCancel ? "Guardado cancelado." : "Error: " + e.message;
+    saveStatus.className = esCancel ? "ws-save-status" : "ws-save-status err";
+    mostrar(esCancel ? "Guardado cancelado." : "Error al guardar: " + e.message, esCancel ? "" : "err");
+  } finally {
+    ocultarLoader();
+    setWorkspaceBusyState(false);
+    guardadoCancelado = false;
+  }
+}
+
 let sesionCheckInterval = null;
 
 async function verificarSesion() {

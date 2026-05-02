@@ -843,6 +843,14 @@
     }
     @keyframes ws-spin { to { transform: rotate(360deg); } }
     .ws-loading-msg { font-size: 13px; color: var(--muted); }
+    .ws-loading-actions { display: flex; gap: 10px; }
+    .ws-loading-submsg {
+      font-size: 11px;
+      color: var(--muted);
+      max-width: 340px;
+      text-align: center;
+      line-height: 1.35;
+    }
 
     @media (max-width: 640px) {
       .page-header { padding: 10px 14px; }
@@ -891,6 +899,10 @@
     <div id="ws-loading">
       <div class="ws-spinner"></div>
       <span class="ws-loading-msg">Cargando…</span>
+      <span class="ws-loading-submsg" id="ws-loading-submsg" style="display:none;"></span>
+      <div class="ws-loading-actions">
+        <button id="ws-loading-cancel" class="alt sm" style="display:none;">Cancelar</button>
+      </div>
     </div>
 
     <!-- Top bar: nombre del mapeo + botón cargar PDF -->

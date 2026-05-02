@@ -1074,6 +1074,14 @@
 
   function abrirPreviewArchivo(fila) {
     if (!fila?.archivo) return;
+    
+    // Verificar que el archivo sea válido
+    if (!(fila.archivo instanceof File) && !(fila.archivo instanceof Blob)) {
+      console.error("[MAU] El archivo no es un File/Blob válido:", fila.archivo);
+      mostrarToast("❌ Error: archivo no válido para previsualizar");
+      return;
+    }
+    
     const overlay = document.createElement("div");
     overlay.className = "mau-confirm mau-preview-modal";
     const box = document.createElement("div");
@@ -1099,11 +1107,29 @@
 
     const cuerpo = document.createElement("div");
     cuerpo.className = "mau-preview-body";
+    
+    // Intentar crear el object URL con manejo de errores
+    let objectUrl = null;
+    try {
+      objectUrl = URL.createObjectURL(fila.archivo);
+      console.log("[MAU] Object URL creado para preview:", objectUrl);
+    } catch (error) {
+      console.error("[MAU] Error al crear object URL:", error);
+      mostrarToast("❌ Error al crear vista previa del archivo");
+      return;
+    }
+    
     const frame = document.createElement("iframe");
     frame.className = "mau-preview-frame";
     frame.title = fila.archivo.name || "Vista previa PDF";
-    const objectUrl = URL.createObjectURL(fila.archivo);
     frame.src = objectUrl;
+    
+    // Agregar manejador de errores para el iframe
+    frame.addEventListener("error", () => {
+      console.error("[MAU] Error al cargar el PDF en el iframe");
+      mostrarToast("❌ No se pudo cargar el PDF para previsualizar");
+    });
+    
     cuerpo.appendChild(frame);
 
     box.appendChild(header);
@@ -1112,7 +1138,14 @@
     document.body.appendChild(overlay);
 
     const cerrar = () => {
-      try { URL.revokeObjectURL(objectUrl); } catch (e) { }
+      if (objectUrl) {
+        try { 
+          URL.revokeObjectURL(objectUrl);
+          console.log("[MAU] Object URL revocado");
+        } catch (e) { 
+          console.warn("[MAU] Error al revocar object URL:", e);
+        }
+      }
       try { overlay.remove(); } catch (e) { }
     };
 
@@ -1120,6 +1153,19 @@
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) cerrar();
     });
+    
+    // Agregar botón para abrir en nueva pestaña como alternativa
+    const btnAbrirNuevaPestaña = document.createElement("button");
+    btnAbrirNuevaPestaña.type = "button";
+    btnAbrirNuevaPestaña.className = "mau-btn mau-btn-primary";
+    btnAbrirNuevaPestaña.textContent = "Abrir en nueva pestaña";
+    btnAbrirNuevaPestaña.style.marginLeft = "10px";
+    btnAbrirNuevaPestaña.addEventListener("click", () => {
+      if (objectUrl) {
+        window.open(objectUrl, '_blank');
+      }
+    });
+    header.appendChild(btnAbrirNuevaPestaña);
   }
 
   function crearFilaTabla(f) {
