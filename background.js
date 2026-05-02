@@ -327,8 +327,11 @@ async function fsAddDoc(collectionPath, payload, idToken) {
 async function registrarUsoIA(tipo, usage, modelo) {
   try {
     const auth = await fbGetAuth();
-    if (!auth?.uid || !auth?.idToken) return;
-    await fsAddDoc(`apps/${APP_FS_ID}/usage_logs`, {
+    if (!auth?.uid || !auth?.idToken) {
+      console.warn("[MAU][USO] Sin auth — no se registra uso. Auth:", JSON.stringify(auth));
+      return;
+    }
+    const payload = {
       uid: auth.uid,
       email: auth.email || "",
       ts: Date.now(),
@@ -336,9 +339,12 @@ async function registrarUsoIA(tipo, usage, modelo) {
       tokensEntrada: usage?.input_tokens || 0,
       tokensSalida: usage?.output_tokens || 0,
       tipo
-    }, auth.idToken);
+    };
+    console.log("[MAU][USO] Guardando en Firestore:", JSON.stringify(payload));
+    await fsAddDoc(`apps/${APP_FS_ID}/usage_logs`, payload, auth.idToken);
+    console.log("[MAU][USO] Guardado OK ✓");
   } catch (e) {
-    console.warn("[MAU] No se pudo registrar uso IA:", e.message);
+    console.warn("[MAU][USO] Error al guardar:", e.message);
   }
 }
 
@@ -3105,9 +3111,12 @@ async function llamarClaudeMessages(body, etiquetaError) {
     json = await resp.json();
   }
 
+  console.log(`[MAU][USO] Respuesta Claude (${etiquetaError}) — usage:`, JSON.stringify(json?.usage));
   if (json?.usage) {
     const tipo = etiquetaError?.includes("comparar") ? "comparar" : etiquetaError?.includes("OCR") ? "extraer" : "otro";
     registrarUsoIA(tipo, json.usage, body?.model);
+  } else {
+    console.warn("[MAU][USO] Sin campo usage en respuesta — no se registra. Keys:", Object.keys(json || {}));
   }
   return json;
 }

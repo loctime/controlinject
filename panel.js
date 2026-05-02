@@ -71,7 +71,7 @@
       
       if (ui.loginScreen) ui.loginScreen.hidden = loggedIn;
       if (ui.modoTrabajar) ui.modoTrabajar.hidden = !loggedIn;
-      mostrarEmailHeader(loggedIn ? (r.user.email || "Conectado") : "");
+      mostrarEmailHeader(loggedIn ? (r.user.email || `UID: ${r.user.uid.slice(0, 8)}...`) : "");
       
       return loggedIn;
     } catch (error) {

@@ -37,8 +37,13 @@ function geminiToAnthropicShape(geminiJson) {
     .filter(Boolean)
     .join("\n")
     .trim();
+  const meta = geminiJson?.usageMetadata;
   return {
-    content: [{ text: text || "" }]
+    content: [{ text: text || "" }],
+    usage: {
+      input_tokens:  meta?.promptTokenCount     || 0,
+      output_tokens: meta?.candidatesTokenCount || 0
+    }
   };
 }
 
