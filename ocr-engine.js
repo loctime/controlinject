@@ -136,7 +136,8 @@
           nombre: resultado?.nombre || "",
           patente: resultado?.patente || "",
           periodo: resultado?.periodo || "",
-          textoEstable: resultado?.textoEstable || ""
+          textoEstable: resultado?.textoEstable || "",
+          marcaPagina: resultado?.marcaPagina || ""
         });
       } catch (e) {
         // Si es error de API Key o configuración, relanzar de inmediato — no tiene sentido
@@ -153,7 +154,8 @@
           nombre: "",
           patente: "",
           periodo: "",
-          textoEstable: ""
+          textoEstable: "",
+          marcaPagina: ""
         });
       }
 

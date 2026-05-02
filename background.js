@@ -2021,6 +2021,54 @@ async function compararPaginasConReferencia(nuevasPaginas, referencia) {
   if (!nuevasPaginas?.length || !referencia?.bloques?.length || !tieneImagenes) return null;
 
   const { modelo } = await obtenerIAConfig();
+  const normalizarMarcaPagina = (s) => {
+    const m = String(s || "").match(/(\d+)\s*\/\s*(\d+)/);
+    if (!m) return "";
+    return `${parseInt(m[1], 10)}/${parseInt(m[2], 10)}`;
+  };
+  const tokenizarFirmaEstable = (s) => normalizar(s)
+    .split(" ")
+    .map((x) => x.trim())
+    .filter((x) => x && x.length >= 3)
+    .filter((x) => !/^\d+$/.test(x))
+    .filter((x) => !["http", "https", "www", "com", "ar", "pagina", "pag"].includes(x));
+  const scoreFirmaEstable = (a, b) => {
+    const aa = tokenizarFirmaEstable(a);
+    const bb = tokenizarFirmaEstable(b);
+    if (!aa.length || !bb.length) return 0;
+    const sa = new Set(aa);
+    const sb = new Set(bb);
+    const comunes = [...sa].filter((t) => sb.has(t)).length;
+    const minLen = Math.min(sa.size, sb.size);
+    let score = comunes;
+    const na = aa.join(" ");
+    const nb = bb.join(" ");
+    if (na && nb && (na.includes(nb) || nb.includes(na))) score += 2;
+    if (minLen >= 2 && comunes >= minLen) score += 2;
+    return score;
+  };
+  const scorePaginaComplementaria = (item, bloque) => {
+    if (!item || !bloque || !Array.isArray(bloque.paginasMeta) || !bloque.paginasMeta.length) return 0;
+    let score = 0;
+    const marcaItem = normalizarMarcaPagina(item.marca_pagina);
+    const textoItem = String(item.texto_estable || "").trim();
+    for (const refMeta of bloque.paginasMeta) {
+      const textoRef = String(refMeta?.textoEstable || "").trim();
+      const marcaRef = normalizarMarcaPagina(refMeta?.marcaPagina);
+      score = Math.max(score, scoreFirmaEstable(textoItem, textoRef));
+      if (marcaItem && marcaRef && marcaItem === marcaRef) {
+        score = Math.max(score, 6);
+      }
+    }
+    const pags = Array.isArray(bloque.paginas) ? [...bloque.paginas].sort((a, b) => a - b) : [];
+    if (pags.length) {
+      const minPag = pags[0];
+      const maxPag = pags[pags.length - 1];
+      if (item.pagina_nueva === minPag - 1 || item.pagina_nueva === maxPag + 1) score += 2;
+    }
+    if (bloque.paginas.length > 0 && bloque.paginas.length < (bloque.paginasMapeo || 0)) score += 1;
+    return score;
+  };
 
   // Obtener TODAS las imágenes de referencia por bloque (una por cada página del bloque)
   const bloquesRef = referencia.bloques.map((b) => {
@@ -2036,7 +2084,15 @@ async function compararPaginasConReferencia(nuevasPaginas, referencia) {
     if (imagenesRef.length === 0 && referencia.imagenesPorBloque && referencia.imagenesPorBloque[b.nombre]) {
       imagenesRef = [referencia.imagenesPorBloque[b.nombre]];
     }
-    return imagenesRef.length > 0 ? { ...b, imagenesRef } : null;
+    const paginasMeta = Array.isArray(b.paginasMeta)
+      ? b.paginasMeta.map((pm) => ({
+          pagina: Number(pm?.pagina) || 0,
+          textoEstable: String(pm?.textoEstable || "").trim(),
+          marcaPagina: String(pm?.marcaPagina || "").trim(),
+          esContinuacion: !!pm?.esContinuacion
+        }))
+      : [];
+    return imagenesRef.length > 0 ? { ...b, imagenesRef, paginasMeta } : null;
   }).filter(Boolean);
 
   if (!bloquesRef.length) return null;
@@ -2055,7 +2111,11 @@ async function compararPaginasConReferencia(nuevasPaginas, referencia) {
   bloquesRef.forEach((b, idx) => {
     content.push({ type: "text", text: `\nRef ${idx + 1}: ${b.nombre || "Bloque"} (${b.imagenesRef.length} tipo(s) de formulario en este bloque)` });
     b.imagenesRef.forEach((imgBase64, pIdx) => {
-      content.push({ type: "text", text: `  Formulario ${pIdx + 1} de Ref ${idx + 1}:` });
+      const firmaRef = b.paginasMeta?.[pIdx];
+      const detalleFirma = [];
+      if (firmaRef?.marcaPagina) detalleFirma.push(`marca ${firmaRef.marcaPagina}`);
+      if (firmaRef?.textoEstable) detalleFirma.push(`texto estable: ${firmaRef.textoEstable}`);
+      content.push({ type: "text", text: `  Formulario ${pIdx + 1} de Ref ${idx + 1}:${detalleFirma.length ? ` (${detalleFirma.join(" · ")})` : ""}` });
       content.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: imgBase64 } });
     });
   });
@@ -2087,6 +2147,8 @@ Además, extraé de cada página nueva (si es legible):
 - apellido (si podés, apellido + nombre completo del empleado en el campo apellido)
 - nombre
 - CUIL del empleado
+- texto_estable: lista breve de palabras visibles y distintivas de esa página, evitando fechas/horas/datos variables cuando no ayuden
+- marca_pagina: numeración visible tipo "1/2", "2/2" si aparece
 - entidades_mencionadas: array con nombres completos y/o patentes que aparezcan en la página
 
 Si una página definitivamente no es ningún tipo de formulario de ningún Ref → bloque: null.
@@ -2096,8 +2158,8 @@ IMPORTANTE: reportá TODAS las páginas nuevas en el JSON, incluso las que no co
 Respondé SOLO JSON válido, sin texto extra:
 {
   "paginas": [
-    { "pagina_nueva": 1, "apellido": "APELLIDO NOMBRE", "nombre": "", "cuil_leido": "20-12345678-9", "entidades_mencionadas": ["APELLIDO NOMBRE"], "bloque": "Ref 1" },
-    { "pagina_nueva": 2, "apellido": "", "nombre": "", "cuil_leido": "", "entidades_mencionadas": [], "bloque": null }
+    { "pagina_nueva": 1, "apellido": "APELLIDO NOMBRE", "nombre": "", "cuil_leido": "20-12345678-9", "texto_estable": "constancia inscripcion arca", "marca_pagina": "1/2", "entidades_mencionadas": ["APELLIDO NOMBRE"], "bloque": "Ref 1" },
+    { "pagina_nueva": 2, "apellido": "", "nombre": "", "cuil_leido": "", "texto_estable": "arca vigencia verificador", "marca_pagina": "2/2", "entidades_mencionadas": [], "bloque": null }
   ]
 }`
   });
@@ -2148,11 +2210,30 @@ Respondé SOLO JSON válido, sin texto extra:
   // Antes se usaba solo refIdx como clave, lo que colapsaba todas las páginas de todas
   // las personas en un único bloque.
   const bloquesMapIdx = new Map(); // key: `${refIdx}__${personKey}` → { refBloque, paginas }
+  const paginasSinAsignar = new Map(); // key: pagina_nueva -> item sin bloque asignado
+
+  function resolverMapKeyAnonimo(refIdx, paginaNueva) {
+    const candidatos = Array.from(bloquesMapIdx.entries())
+      .filter(([, b]) => b.refIdx === refIdx && (b.paginasMapeo || 0) > b.paginas.length);
+    if (!candidatos.length) return null;
+
+    const adyacentes = candidatos.filter(([, b]) => {
+      if (!Array.isArray(b.paginas) || !b.paginas.length) return false;
+      const minPag = Math.min(...b.paginas);
+      const maxPag = Math.max(...b.paginas);
+      return paginaNueva === minPag - 1 || paginaNueva === maxPag + 1;
+    });
+
+    if (adyacentes.length === 1) return adyacentes[0][0];
+    if (candidatos.length === 1) return candidatos[0][0];
+    return null;
+  }
 
   for (const item of parsed.paginas) {
     if (!item.pagina_nueva) continue;
     if (!item.bloque) {
       console.log(`[MAU] Pág ${item.pagina_nueva} → sin asignar (CUIL=${normCuil(item.cuil_leido) || "no leído"})`);
+      paginasSinAsignar.set(item.pagina_nueva, item);
       continue;
     }
 
@@ -2173,11 +2254,25 @@ Respondé SOLO JSON válido, sin texto extra:
     // Si no se puede leer nada, todas las páginas sin identificar van a una entrada "s/d".
     const apellidoNorm = normalizar(String(item.apellido || "").trim());
     const personKey = cuilLeido || apellidoNorm || "s/d";
-    const mapKey = `${refIdx}__${personKey}`;
+    let mapKey = `${refIdx}__${personKey}`;
+
+    // Si la página pertenece al Ref correcto pero no trae identidad legible,
+    // intentamos anexarla al bloque identificado del mismo Ref que aún está incompleto.
+    // Esto cubre páginas de continuación (ej: pág. 2/2) donde la primera hoja sí tiene CUIL/nombre
+    // y la segunda casi no tiene datos propios.
+    if (personKey === "s/d") {
+      const mapKeyAnonimo = resolverMapKeyAnonimo(refIdx, item.pagina_nueva);
+      if (mapKeyAnonimo) {
+        mapKey = mapKeyAnonimo;
+        console.log(`[MAU] Pág ${item.pagina_nueva} → anexada al bloque identificado ${mapKeyAnonimo}`);
+      }
+    }
 
     console.log(`[MAU] Pág ${item.pagina_nueva} → Ref ${refIdx+1} "${refBloque.nombre || "Bloque"}" CUIL=${cuilLeido || "(sin cuil)"} persona="${personKey}"`);
     if (!bloquesMapIdx.has(mapKey)) {
       bloquesMapIdx.set(mapKey, {
+        refIdx,
+        personKey,
         nombre: refBloque.nombre,
         paginas: [],
         paginasMapeo: (refBloque.paginas || []).length,
@@ -2192,6 +2287,8 @@ Respondé SOLO JSON válido, sin texto extra:
       apellido: metaActual.apellido || String(item.apellido || "").trim(),
       nombre: metaActual.nombre || String(item.nombre || "").trim()
     };
+    if (String(item.texto_estable || "").trim()) metaNuevo.texto_estable = metaActual.texto_estable || String(item.texto_estable || "").trim();
+    if (String(item.marca_pagina || "").trim()) metaNuevo.marca_pagina = metaActual.marca_pagina || String(item.marca_pagina || "").trim();
     const entidadesPag = Array.isArray(item.entidades_mencionadas)
       ? item.entidades_mencionadas.map((x) => String(x || "").trim()).filter(Boolean)
       : [];
@@ -2202,6 +2299,81 @@ Respondé SOLO JSON válido, sin texto extra:
     if (cuilLeido) metaNuevo.cuil = item.cuil_leido;
     bloquesMapIdx.get(mapKey).meta = metaNuevo;
     bloquesMapIdx.get(mapKey).paginas.push(item.pagina_nueva);
+  }
+
+  // Rescate conservador para páginas de continuación "muditas" que Claude dejó sin bloque.
+  // Caso típico: página 2/2 con mucho espacio en blanco, header/footer y sin CUIL legible.
+  const esPaginaMuda = (item) => {
+    if (!item) return false;
+    const tieneCuil = !!normCuil(item.cuil_leido);
+    const tieneApellido = !!normalizar(String(item.apellido || "").trim());
+    const tieneNombre = !!normalizar(String(item.nombre || "").trim());
+    const entidades = Array.isArray(item.entidades_mencionadas)
+      ? item.entidades_mencionadas.map((x) => String(x || "").trim()).filter(Boolean)
+      : [];
+    return !tieneCuil && !tieneApellido && !tieneNombre && entidades.length === 0;
+  };
+
+  for (const bloque of bloquesMapIdx.values()) {
+    const faltan = Math.max(0, (bloque.paginasMapeo || 0) - bloque.paginas.length);
+    if (!faltan || bloque.paginas.length === 0) continue;
+
+    const paginasOrdenadas = [...bloque.paginas].sort((a, b) => a - b);
+    let minPag = paginasOrdenadas[0];
+    let maxPag = paginasOrdenadas[paginasOrdenadas.length - 1];
+    const rescatadas = [];
+
+    while (rescatadas.length < faltan) {
+      const candidataAntes = paginasSinAsignar.get(minPag - 1);
+      if (candidataAntes && esPaginaMuda(candidataAntes)) {
+        rescatadas.push(minPag - 1);
+        paginasSinAsignar.delete(minPag - 1);
+        minPag -= 1;
+        continue;
+      }
+
+      const candidataDespues = paginasSinAsignar.get(maxPag + 1);
+      if (candidataDespues && esPaginaMuda(candidataDespues)) {
+        rescatadas.push(maxPag + 1);
+        paginasSinAsignar.delete(maxPag + 1);
+        maxPag += 1;
+        continue;
+      }
+
+      break;
+    }
+
+    if (rescatadas.length) {
+      bloque.paginas.push(...rescatadas);
+      bloque.paginas.sort((a, b) => a - b);
+      console.log(
+        `[MAU] Bloque "${bloque.nombre}" recuperó ${rescatadas.length} página(s) contigua(s) sin identidad: [${rescatadas.join(",")}]`
+      );
+    }
+  }
+
+  // Fallback secundario: usar la firma textual guardada por página del mapeo para
+  // completar bloques incompletos con páginas sin identidad fuerte.
+  for (const bloque of bloquesMapIdx.values()) {
+    const faltan = Math.max(0, (bloque.paginasMapeo || 0) - bloque.paginas.length);
+    if (!faltan || bloque.paginas.length === 0) continue;
+
+    const candidatos = Array.from(paginasSinAsignar.values())
+      .map((item) => ({ item, score: scorePaginaComplementaria(item, bloque) }))
+      .filter(({ score }) => score >= 4)
+      .sort((a, b) => b.score - a.score || a.item.pagina_nueva - b.item.pagina_nueva);
+
+    if (!candidatos.length) continue;
+    const mejor = candidatos[0];
+    const segundo = candidatos[1];
+    if (segundo && mejor.score === segundo.score) continue;
+
+    bloque.paginas.push(mejor.item.pagina_nueva);
+    bloque.paginas.sort((a, b) => a - b);
+    paginasSinAsignar.delete(mejor.item.pagina_nueva);
+    console.log(
+      `[MAU] Bloque "${bloque.nombre}" recuperó la página ${mejor.item.pagina_nueva} por firma textual (score=${mejor.score})`
+    );
   }
 
   // Validar que cada bloque encontrado tiene TODAS las páginas que dice el mapeo.
@@ -2915,9 +3087,10 @@ Reglas:
 - Si hay patente de vehiculo, devuelvela.
 - Si hay periodo o mes/anio, devuelvelo en formato YYYY-MM cuando sea posible.
 - textoEstable debe ser una lista breve de palabras visibles utiles para reconocer la pagina despues, sin datos sensibles innecesarios.
+- marcaPagina debe ser la numeracion visible de la hoja dentro del documento, por ejemplo "1/2" o "2/2", si aparece.
 
 Responde SOLO JSON valido:
-{"cuil":"","apellido":"","nombre":"","patente":"","periodo":"","textoEstable":""}`;
+{"cuil":"","apellido":"","nombre":"","patente":"","periodo":"","textoEstable":"","marcaPagina":""}`;
 
   const body = {
     model: modelo,
@@ -2955,6 +3128,7 @@ Responde SOLO JSON valido:
     patente: String(parsed?.patente || "").trim(),
     periodo: String(parsed?.periodo || "").trim(),
     textoEstable: String(parsed?.textoEstable || "").trim(),
+    marcaPagina: String(parsed?.marcaPagina || "").trim(),
     raw: textoRespuesta
   };
 }

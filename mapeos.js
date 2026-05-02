@@ -110,8 +110,64 @@ function mapearBloquesParaWorkspace(bloques = [], { conservarPaginas = false } =
     nombre: b.nombre || `Bloque ${i + 1}`,
     paginas: conservarPaginas ? [...(b.paginas || [])] : [],
     requerimientos: [...(b.requerimientos || [])],
-    meta: { ...(b.meta || {}) }
+    meta: { ...(b.meta || {}) },
+    paginasMeta: Array.isArray(b.paginasMeta) ? b.paginasMeta.map((p) => ({ ...p })) : []
   }));
+}
+
+async function construirPaginasMetaParaBloques(bloques, imagenes, onProgress) {
+  const imagenPorPagina = new Map((imagenes || []).map((img) => [Number(img?.pagina), img?.base64 || ""]));
+  const paginasUnicas = [...new Set(
+    (bloques || [])
+      .flatMap((b) => Array.isArray(b?.paginas) ? b.paginas : [])
+      .map((n) => Number(n))
+      .filter((n) => n > 0)
+  )].sort((a, b) => a - b);
+
+  const metaPorPagina = new Map();
+  let idx = 0;
+  for (const pagina of paginasUnicas) {
+    idx++;
+    if (typeof onProgress === "function") {
+      onProgress({ pagina, actual: idx, total: paginasUnicas.length });
+    }
+    const base64 = imagenPorPagina.get(pagina);
+    if (!base64) {
+      metaPorPagina.set(pagina, { pagina, textoEstable: "", marcaPagina: "" });
+      continue;
+    }
+    try {
+      const r = await chrome.runtime.sendMessage({
+        action: "ai:extraerMetadataPagina",
+        payload: { base64, mediaType: "image/jpeg" }
+      });
+      const data = r?.data || {};
+      metaPorPagina.set(pagina, {
+        pagina,
+        textoEstable: String(data.textoEstable || "").trim(),
+        marcaPagina: String(data.marcaPagina || "").trim()
+      });
+    } catch (e) {
+      console.warn(`[MAU][MAPEOS] No se pudo extraer firma de la página ${pagina}:`, e);
+      metaPorPagina.set(pagina, { pagina, textoEstable: "", marcaPagina: "" });
+    }
+  }
+
+  return (bloques || []).map((b) => {
+    const paginasOrdenadas = [...(b.paginas || [])].sort((a, b) => a - b);
+    return {
+      ...b,
+      paginasMeta: paginasOrdenadas.map((pagina, idxPagina) => {
+        const meta = metaPorPagina.get(pagina) || {};
+        return {
+          pagina,
+          textoEstable: String(meta.textoEstable || "").trim(),
+          marcaPagina: String(meta.marcaPagina || "").trim(),
+          esContinuacion: idxPagina > 0
+        };
+      })
+    };
+  });
 }
 
 function abrirWorkspaceConImagenes({ nombre, imagenes, bloques, status, fileLabel }) {
@@ -846,7 +902,7 @@ async function renderizarPdfEnImagenes(file, { pageOffset = 0, statusPrefix = "R
     for (let i = 1; i <= pdf.numPages; i++) {
       setWsStatus(`${statusPrefix}: página ${i} de ${pdf.numPages}…`);
       const page = await pdf.getPage(i);
-      const viewport = page.getViewport({ scale: 0.5 });
+      const viewport = page.getViewport({ scale: 2.2 });
       const canvas = document.createElement("canvas");
       canvas.width = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
@@ -856,7 +912,7 @@ async function renderizarPdfEnImagenes(file, { pageOffset = 0, statusPrefix = "R
       await page.render({ canvasContext: ctx, viewport }).promise;
       imagenes.push({
         pagina: pageOffset + i,
-        base64: canvas.toDataURL("image/jpeg", 0.82).split(",")[1]
+        base64: canvas.toDataURL("image/jpeg", 0.92).split(",")[1]
       });
     }
     return imagenes;
@@ -1005,6 +1061,7 @@ function abrirPreviewPagina(dataUrl, pagina) {
 
   const overlay = document.createElement("div");
   overlay.className = "thumb-preview-overlay";
+  const puedeHD = nuevoPdfPreviewDisponible && !!nuevoFile;
   overlay.innerHTML = `
     <div class="thumb-preview-img-wrap">
       <img src="${dataUrl}" alt="Página ${pagina}" />
@@ -1017,13 +1074,12 @@ function abrirPreviewPagina(dataUrl, pagina) {
     </div>
     <button class="thumb-preview-close" title="Cerrar">&times;</button>
     <div class="thumb-preview-label">Página ${pagina} — ${escapeHtml(label)}</div>
-    <div class="thumb-preview-status">Cargando vista nítida…</div>
+    ${puedeHD ? `<div class="thumb-preview-status">Cargando vista nítida…</div>` : ""}
   `;
 
   const wrap = overlay.querySelector(".thumb-preview-img-wrap");
   const img = overlay.querySelector("img");
   const lbl = overlay.querySelector(".thumb-preview-zoom-label");
-  const status = overlay.querySelector(".thumb-preview-status");
   let scale = 1;
   let tx = 0;
   let ty = 0;
@@ -1119,21 +1175,18 @@ function abrirPreviewPagina(dataUrl, pagina) {
 
   document.body.appendChild(overlay);
 
-  renderizarPaginaPreview(pagina)
-    .then(previewUrl => {
-      if (!document.body.contains(overlay)) return;
-      if (img.src !== previewUrl) {
-        img.src = previewUrl;
-        scale = 1;
-        tx = 0;
-        ty = 0;
-      }
-      if (status) status.remove();
-    })
-    .catch(err => {
-      if (!document.body.contains(overlay) || !status) return;
-      status.textContent = "No se pudo mejorar la vista: " + err.message;
-    });
+  if (puedeHD) {
+    const status = overlay.querySelector(".thumb-preview-status");
+    renderizarPaginaPreview(pagina)
+      .then(previewUrl => {
+        if (!document.body.contains(overlay)) return;
+        if (img.src !== previewUrl) img.src = previewUrl;
+        if (status) status.remove();
+      })
+      .catch(() => {
+        if (status) status.remove();
+      });
+  }
 }
 
 function manejarClicThumb(e, pagina) {
@@ -1384,15 +1437,24 @@ async function guardarNuevoMapeo() {
   saveStatus.className = "ws-save-status";
 
   try {
+    saveStatus.textContent = "Leyendo firmas por página…";
+    const bloquesConPaginasMeta = await construirPaginasMetaParaBloques(
+      bloquesValidos,
+      nuevoImagenes,
+      ({ actual, total, pagina }) => {
+        saveStatus.textContent = `Leyendo firmas por página… ${actual}/${total} (pág. ${pagina})`;
+      }
+    );
+
     saveStatus.textContent = "Subiendo imágenes de referencia…";
-    const paginasMapeadas = new Set(bloquesValidos.flatMap(b => b.paginas));
+    const paginasMapeadas = new Set(bloquesConPaginasMeta.flatMap(b => b.paginas));
     const imagenesFiltradas = nuevoImagenes.filter(img => paginasMapeadas.has(img.pagina));
     const rImg = await chrome.runtime.sendMessage({
       action: "storage:guardarImagenesPatronRemoto",
       payload: {
         nombre,
         imagenes: imagenesFiltradas,
-        bloques: bloquesValidos
+        bloques: bloquesConPaginasMeta
       }
     });
     if (!rImg?.ok) throw new Error(rImg?.error || "No se pudieron subir las imágenes de referencia.");
@@ -1405,7 +1467,7 @@ async function guardarNuevoMapeo() {
       action: "storage:guardarPatronSabana",
       payload: {
         nombre,
-        bloquesModal: bloquesValidos,
+        bloquesModal: bloquesConPaginasMeta,
         firmaTipos: [],
         totalPaginas,
         controlStorageRef: rImg.data?.controlStorageRef || null
