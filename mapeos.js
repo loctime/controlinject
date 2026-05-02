@@ -36,6 +36,17 @@ function mostrar(msg, tipo) {
   estadoEl.className = tipo || "";
 }
 
+const wsLoadingEl = document.getElementById("ws-loading");
+const wsLoadingMsgEl = wsLoadingEl?.querySelector(".ws-loading-msg");
+
+function mostrarLoader(msg = "Cargando…") {
+  if (wsLoadingMsgEl) wsLoadingMsgEl.textContent = msg;
+  if (wsLoadingEl) wsLoadingEl.style.display = "flex";
+}
+function ocultarLoader() {
+  if (wsLoadingEl) wsLoadingEl.style.display = "none";
+}
+
 function escapeHtml(s) {
   return String(s || "").replace(/[&<>"']/g, c =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -506,6 +517,7 @@ async function abrirRemapear(patron) {
   document.getElementById("nuevo-nombre").value = patron.nombre || "";
   resetearWorkspace();
   switchTab("nuevo");
+  mostrarLoader("Cargando páginas de referencia…");
   mostrar(`Abriendo "${patron.nombre}"…`, "");
 
   try {
@@ -530,7 +542,6 @@ async function abrirRemapear(patron) {
     });
     mostrar(`"${patron.nombre}" listo para editar.`, "ok");
   } catch (e) {
-    // Mostrar workspace con bloques pero sin imágenes — el usuario puede subir el PDF manualmente
     abrirWorkspaceConImagenes({
       nombre: patron.nombre,
       imagenes: [],
@@ -539,6 +550,8 @@ async function abrirRemapear(patron) {
       status: `Subí el PDF de referencia para ver páginas`
     });
     mostrar(`No se encontraron páginas guardadas. Subí el PDF de sábana para reasignar páginas.`, "err");
+  } finally {
+    ocultarLoader();
   }
 }
 
@@ -685,6 +698,7 @@ async function cargarPDF(file) {
   wsCambiarPdfEl.style.display = "";
   setWsStatus("Renderizando páginas…");
   document.getElementById("ws-crear-bloque").disabled = true;
+  mostrarLoader("Renderizando páginas…");
   renderBloques();
 
   try {
@@ -697,6 +711,8 @@ async function cargarPDF(file) {
   } catch (e) {
     setWsStatus("Error: " + e.message);
     mostrar("No se pudo renderizar el PDF: " + e.message, "err");
+  } finally {
+    ocultarLoader();
   }
 }
 
@@ -744,6 +760,7 @@ async function cargarMultiplesPDF(files) {
   wsCambiarPdfEl.style.display = "";
   setWsStatus("Preparando archivos…");
   document.getElementById("ws-crear-bloque").disabled = true;
+  mostrarLoader("Renderizando páginas…");
   renderBloques();
 
   try {
@@ -751,6 +768,7 @@ async function cargarMultiplesPDF(files) {
     let offset = 0;
     for (let i = 0; i < pdfs.length; i++) {
       const file = pdfs[i];
+      if (wsLoadingMsgEl) wsLoadingMsgEl.textContent = `Renderizando ${file.name} (${i + 1}/${pdfs.length})…`;
       const imgs = await renderizarPdfEnImagenes(file, {
         pageOffset: offset,
         statusPrefix: `Renderizando ${file.name}`
@@ -769,6 +787,8 @@ async function cargarMultiplesPDF(files) {
   } catch (e) {
     setWsStatus("Error: " + e.message);
     mostrar("No se pudieron cargar los PDFs: " + e.message, "err");
+  } finally {
+    ocultarLoader();
   }
 }
 

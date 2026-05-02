@@ -58,6 +58,7 @@
   async function verificarSesion(forzarLogin = false) {
     try {
       const r = await window.MAUStorage.firebaseStatus();
+      console.log("[MAU] verificarSesion - respuesta firebaseStatus:", r);
       const loggedIn = !!(r?.user);
       
       if (!loggedIn && forzarLogin) {
@@ -70,7 +71,7 @@
       
       if (ui.loginScreen) ui.loginScreen.hidden = loggedIn;
       if (ui.modoTrabajar) ui.modoTrabajar.hidden = !loggedIn;
-      mostrarEmailHeader(loggedIn ? (r.user.email || "") : "");
+      mostrarEmailHeader(loggedIn ? (r.user.email || "Conectado") : "");
       
       return loggedIn;
     } catch (error) {
@@ -201,7 +202,16 @@
   verificarSesion().then(loggedIn => {
     if (loggedIn) {
       iniciarVerificacionPeriodica();
+    } else {
+      // Asegurar que si no hay sesión, el login screen sea visible
+      if (ui.loginScreen) ui.loginScreen.hidden = false;
+      if (ui.modoTrabajar) ui.modoTrabajar.hidden = true;
     }
+  }).catch(error => {
+    console.error("[MAU] Error en verificación inicial de sesión:", error);
+    // En caso de error, mostrar login por seguridad
+    if (ui.loginScreen) ui.loginScreen.hidden = false;
+    if (ui.modoTrabajar) ui.modoTrabajar.hidden = true;
   });
 
   /**

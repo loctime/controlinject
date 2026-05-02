@@ -896,6 +896,7 @@ async function manejarMensaje(mensaje) {
 
   if (accion === "firebase:status") {
     const auth = await fbGetValidAuth().catch(() => null);
+    console.log("[MAU] Firebase status - auth:", auth ? { uid: auth.uid, email: auth.email, hasToken: !!auth.idToken, expiresAt: auth.expiresAt } : null);
     if (!auth?.uid) return { user: null };
     return { user: { uid: auth.uid, email: auth.email || "", provider: auth.provider || "" } };
   }
