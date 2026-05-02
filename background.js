@@ -3111,10 +3111,11 @@ async function llamarClaudeMessages(body, etiquetaError) {
     json = await resp.json();
   }
 
-  console.log(`[MAU][USO] Respuesta Claude (${etiquetaError}) — usage:`, JSON.stringify(json?.usage));
+  const modeloReal = json?.model || body?.model;
+  console.log(`[MAU][USO] Respuesta (${etiquetaError}) — modelo: ${modeloReal} — usage:`, JSON.stringify(json?.usage));
   if (json?.usage) {
     const tipo = etiquetaError?.includes("comparar") ? "comparar" : etiquetaError?.includes("OCR") ? "extraer" : "otro";
-    registrarUsoIA(tipo, json.usage, body?.model);
+    registrarUsoIA(tipo, json.usage, modeloReal);
   } else {
     console.warn("[MAU][USO] Sin campo usage en respuesta — no se registra. Keys:", Object.keys(json || {}));
   }

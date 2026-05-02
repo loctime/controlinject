@@ -40,6 +40,7 @@ function geminiToAnthropicShape(geminiJson) {
   const meta = geminiJson?.usageMetadata;
   return {
     content: [{ text: text || "" }],
+    model: `gemini/${geminiJson?.modelVersion || process.env.GEMINI_MODEL || "gemini-2.0-flash"}`,
     usage: {
       input_tokens:  meta?.promptTokenCount     || 0,
       output_tokens: meta?.candidatesTokenCount || 0
