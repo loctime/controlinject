@@ -312,6 +312,36 @@ async function fsDeleteDoc(path, idToken) {
   return { deleted: true };
 }
 
+async function fsAddDoc(collectionPath, payload, idToken) {
+  const url = `${FB_FS_URL}/${collectionPath}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(payload).map(([k, v]) => [k, fsToValue(v)])) })
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json?.error?.message || `Firestore add error ${res.status}`);
+  return json;
+}
+
+async function registrarUsoIA(tipo, usage, modelo) {
+  try {
+    const auth = await fbGetAuth();
+    if (!auth?.uid || !auth?.idToken) return;
+    await fsAddDoc(`apps/${APP_FS_ID}/usage_logs`, {
+      uid: auth.uid,
+      email: auth.email || "",
+      ts: Date.now(),
+      modelo: modelo || MODELO_DEFAULT,
+      tokensEntrada: usage?.input_tokens || 0,
+      tokensSalida: usage?.output_tokens || 0,
+      tipo
+    }, auth.idToken);
+  } catch (e) {
+    console.warn("[MAU] No se pudo registrar uso IA:", e.message);
+  }
+}
+
 async function fsGetDoc(path, idToken) {
   const url = `${FB_FS_URL}/${path}`;
   const res = await fetch(url, { headers: { Authorization: `Bearer ${idToken}` } });
@@ -3045,6 +3075,7 @@ async function obtenerIAConfig() {
 async function llamarClaudeMessages(body, etiquetaError) {
   const { apiKey, proxyUrl } = await obtenerIAConfig();
 
+  let json;
   if (proxyUrl) {
     const resp = await fetch(proxyUrl, {
       method: "POST",
@@ -3055,24 +3086,30 @@ async function llamarClaudeMessages(body, etiquetaError) {
       const errText = await resp.text().catch(() => "");
       throw new Error(`${etiquetaError} proxy ${resp.status}: ${errText.slice(0, 300)}`);
     }
-    return await resp.json();
+    json = await resp.json();
+  } else {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify(body)
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      throw new Error(`${etiquetaError} ${resp.status}: ${errText.slice(0, 300)}`);
+    }
+    json = await resp.json();
   }
 
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true"
-    },
-    body: JSON.stringify(body)
-  });
-  if (!resp.ok) {
-    const errText = await resp.text().catch(() => "");
-    throw new Error(`${etiquetaError} ${resp.status}: ${errText.slice(0, 300)}`);
+  if (json?.usage) {
+    const tipo = etiquetaError?.includes("comparar") ? "comparar" : etiquetaError?.includes("OCR") ? "extraer" : "otro";
+    registrarUsoIA(tipo, json.usage, body?.model);
   }
-  return await resp.json();
+  return json;
 }
 
 async function extraerMetadataPaginaConClaude(base64, mediaType) {

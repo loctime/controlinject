@@ -2,3 +2,4 @@ node_modules
 scripts/*.json
 scripts/node_modules
 serviceAccountKey-*.json
+docs/admin/

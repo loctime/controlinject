@@ -105,6 +105,23 @@ function buildPaginaMetaCacheKey(pagina, base64) {
   return `${pagina}::${s.length}::${s.slice(0, 96)}`;
 }
 
+function hidratarCachePaginasMetaDesdeBloques(bloques, imagenes) {
+  const imagenPorPagina = new Map((imagenes || []).map((img) => [Number(img?.pagina), img?.base64 || ""]));
+  for (const bloque of bloques || []) {
+    for (const meta of bloque?.paginasMeta || []) {
+      const pagina = Number(meta?.pagina);
+      const base64 = imagenPorPagina.get(pagina);
+      if (!pagina || !base64) continue;
+      const cacheKey = buildPaginaMetaCacheKey(pagina, base64);
+      if (nuevoPaginasMetaCache.has(cacheKey)) continue;
+      nuevoPaginasMetaCache.set(cacheKey, {
+        textoEstable: String(meta?.textoEstable || "").trim(),
+        marcaPagina: String(meta?.marcaPagina || "").trim()
+      });
+    }
+  }
+}
+
 function paginasAsignadas(exceptId = null) {
   const set = new Set();
   for (const b of nuevoBloques) {
@@ -174,6 +191,8 @@ async function construirPaginasMetaParaBloques(bloques, imagenes, onProgress) {
 
   const metaPorPagina = new Map();
   let completadas = 0;
+  let reutilizadas = 0;
+  let nuevas = 0;
   let cursor = 0;
   const concurrencia = Math.min(3, Math.max(1, paginasUnicas.length));
 
@@ -188,7 +207,7 @@ async function construirPaginasMetaParaBloques(bloques, imagenes, onProgress) {
       if (!base64) {
         metaPorPagina.set(pagina, { pagina, textoEstable: "", marcaPagina: "" });
         completadas++;
-        if (typeof onProgress === "function") onProgress({ pagina, actual: completadas, total: paginasUnicas.length });
+        if (typeof onProgress === "function") onProgress({ pagina, actual: completadas, total: paginasUnicas.length, reutilizadas, nuevas });
         continue;
       }
 
@@ -196,8 +215,9 @@ async function construirPaginasMetaParaBloques(bloques, imagenes, onProgress) {
       const cached = nuevoPaginasMetaCache.get(cacheKey);
       if (cached) {
         metaPorPagina.set(pagina, { pagina, ...cached });
+        reutilizadas++;
         completadas++;
-        if (typeof onProgress === "function") onProgress({ pagina, actual: completadas, total: paginasUnicas.length, fromCache: true });
+        if (typeof onProgress === "function") onProgress({ pagina, actual: completadas, total: paginasUnicas.length, fromCache: true, reutilizadas, nuevas });
         continue;
       }
 
@@ -213,14 +233,16 @@ async function construirPaginasMetaParaBloques(bloques, imagenes, onProgress) {
         };
         nuevoPaginasMetaCache.set(cacheKey, data);
         metaPorPagina.set(pagina, { pagina, ...data });
+        nuevas++;
       } catch (e) {
         if (/cancelado por el usuario/i.test(String(e?.message || ""))) throw e;
         console.warn(`[MAU][MAPEOS] No se pudo extraer firma de la pagina ${pagina}:`, e);
         metaPorPagina.set(pagina, { pagina, textoEstable: "", marcaPagina: "" });
+        nuevas++;
       }
 
       completadas++;
-      if (typeof onProgress === "function") onProgress({ pagina, actual: completadas, total: paginasUnicas.length });
+      if (typeof onProgress === "function") onProgress({ pagina, actual: completadas, total: paginasUnicas.length, reutilizadas, nuevas });
     }
   };
 
@@ -261,6 +283,7 @@ function abrirWorkspaceConImagenes({ nombre, imagenes, bloques, status, fileLabe
   nuevoPreviewCache.clear();
   nuevoBloques = Array.isArray(bloques) ? bloques : [];
   nuevoFuentes = fileLabel ? [fileLabel] : [];
+  hidratarCachePaginasMetaDesdeBloques(nuevoBloques, nuevoImagenes);
 
   dropzone.style.display = "none";
   document.getElementById("nuevo-workspace").style.display = "flex";
@@ -1625,11 +1648,12 @@ async function guardarNuevoMapeo() {
     const bloquesConPaginasMeta = await construirPaginasMetaParaBloques(
       bloquesValidos,
       nuevoImagenes,
-      ({ actual, total, pagina, fromCache }) => {
+      ({ actual, total, pagina, fromCache, reutilizadas, nuevas }) => {
         const cacheStr = fromCache ? " · caché" : "";
-        saveStatus.textContent = `Leyendo firmas por página… ${actual}/${total} (pág. ${pagina}${cacheStr})`;
+        const resumen = ` · ${reutilizadas || 0} reutilizadas · ${nuevas || 0} nuevas`;
+        saveStatus.textContent = `Leyendo firmas por página… ${actual}/${total} (pág. ${pagina}${cacheStr})${resumen}`;
         mostrarLoader("Guardando mapeo…", {
-          submsg: `Leyendo firmas por página… ${actual}/${total} (pág. ${pagina}${cacheStr})`,
+          submsg: `Leyendo firmas por página… ${actual}/${total} (pág. ${pagina}${cacheStr})${resumen}`,
           cancelable: true
         });
       }
