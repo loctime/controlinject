@@ -2558,6 +2558,12 @@
     aplicarBloquesModal,   // ← fallback por compatibilidad
     procesarTodo,
     asignarArchivoARequerimiento,
-    renderTabla
+    renderTabla,
+    subirArchivoARequeridos(file, nombresRequeridos) {
+      for (const nombre of nombresRequeridos) {
+        asignarArchivoARequerimiento(nombre, file, null);
+      }
+      return nombresRequeridos.length;
+    }
   };
 })();

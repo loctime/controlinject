@@ -26,6 +26,7 @@ const KEY_TG_ULTIMO_HASH = "controlinject_tg_ultimo_hash";
 const KEY_TG_UPDATE_OFFSET = "controlinject_tg_update_offset";
 const KEY_TG_PENDIENTE_DOC = "controlinject_tg_pendiente_doc";
 const KEY_TG_PENDIENTE_SABANA = "controlinject_tg_pendiente_sabana";
+const KEY_TG_PENDIENTE_UNICO = "controlinject_tg_pendiente_unico";
 
 const ALARMA_TG = "controlinject_alarma_telegram";
 const ALARMA_TG_POLL = "controlinject_alarma_tg_poll";
@@ -143,6 +144,13 @@ async function fbGetValidAuth() {
   if (!auth) return null;
   const now = Date.now();
   
+  // Si el email es null o vacío, forzar logout por inconsistencia
+  if (!auth.email || auth.email.trim() === "") {
+    console.warn("[MAU] Email perdido o inválido, forzando logout para mantener consistencia");
+    await fbClearAuth();
+    return null;
+  }
+  
   // Token válido por más de 5 minutos, retornar directamente
   if (auth.expiresAt && auth.expiresAt > now + 5 * 60 * 1000) {
     return auth;
@@ -161,8 +169,17 @@ async function fbGetValidAuth() {
     const merged = {
       ...auth,
       ...refreshed,
+      email: auth.email, // Preservar email original (Firebase no lo devuelve en refresh)
       expiresAt: now + 55 * 60 * 1000
     };
+    
+    // Validación adicional después del refresh
+    if (!merged.email || merged.email.trim() === "") {
+      console.warn("[MAU] Email se perdió durante refresh, forzando logout");
+      await fbClearAuth();
+      return null;
+    }
+    
     await fbSetAuth(merged);
     console.log("[MAU] Token refrescado exitosamente");
     return merged;
@@ -180,9 +197,15 @@ async function fbLoginEmail(email, password) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, returnSecureToken: true })
   });
+  
+  const emailGuardado = data.email || email;
+  if (!emailGuardado || emailGuardado.trim() === "") {
+    throw new Error("No se pudo obtener el email del usuario. Intenta nuevamente.");
+  }
+  
   const auth = {
     uid: data.localId,
-    email: data.email || email,
+    email: emailGuardado,
     idToken: data.idToken,
     refreshToken: data.refreshToken,
     provider: "password",
@@ -243,9 +266,13 @@ async function fbLoginGoogle() {
     })
   });
 
+  if (!data.email || data.email.trim() === "") {
+    throw new Error("No se pudo obtener el email de Google. Intenta nuevamente.");
+  }
+
   const auth = {
     uid: data.localId,
-    email: data.email || "",
+    email: data.email,
     idToken: data.idToken,
     refreshToken: data.refreshToken,
     provider: "google.com",
@@ -1220,6 +1247,7 @@ function tgEnSilencio(silencioDesde, silencioHasta, ahora) {
 
 async function tgRegistrarComandos(token) {
   const comandos = [
+    { command: "unico", description: "Subir un archivo a un requerido específico" },
     { command: "chequear", description: "Resumen de vencimientos ahora" },
     { command: "ayuda", description: "Muestra los comandos disponibles" }
   ];
@@ -1356,9 +1384,281 @@ async function tgProcesarComandos() {
   }
 }
 
+// ── Funciones de Archivo Único (flujo sin IA) ───────────────────────────────
+
+async function tgIniciarModoUnico(cfg) {
+  await chrome.storage.local.remove(KEY_TG_PENDIENTE_UNICO);
+  await chrome.storage.local.set({ [KEY_TG_PENDIENTE_UNICO]: { fase: "esperar_archivo" } });
+  await tgEnviarMensaje(cfg.token, cfg.chatId, "📤 Modo archivo único activado.\nEnviame el archivo PDF.");
+}
+
+async function tgBuscarRequeridosPorTermino(termino, cfg) {
+  await tgEnviarMensaje(cfg.token, cfg.chatId, `🔍 Buscando requeridos con "<b>${escapeHtml(termino)}</b>"…`);
+
+  let tabId;
+  try {
+    const tab = await tgConseguirTabBandeja();
+    tabId = tab.tabId;
+  } catch (e) {
+    await tgEnviarMensaje(cfg.token, cfg.chatId, `❌ No pude abrir controldocumentario.com: ${escapeHtml(e.message || String(e))}`);
+    return;
+  }
+
+  let candidatos;
+  try {
+    const execRes = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: async (terminoBusqueda) => {
+        const wait = ms => new Promise(r => setTimeout(r, ms));
+        const t0 = Date.now();
+        while (!window.MAUPanel && Date.now() - t0 < 30000) await wait(500);
+        if (!window.MAUPanel) return null;
+        const P = window.MAUPanel;
+        await P.detectarRequerimientosPendientes();
+        const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+                           .toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+        const termNorm = norm(terminoBusqueda);
+        return (P.estado.requerimientos || [])
+          .filter(r => norm(r.nombre).includes(termNorm) || norm(r.recurso?.apellido || "").includes(termNorm))
+          .map((r, i) => ({ indice: i + 1, nombre: r.nombre, apellido: r.recurso?.apellido || "" }));
+      },
+      args: [termino]
+    });
+    candidatos = execRes?.[0]?.result;
+  } catch (e) {
+    await tgEnviarMensaje(cfg.token, cfg.chatId, `❌ Error buscando requeridos: ${escapeHtml(e.message || String(e))}`);
+    return;
+  }
+
+  if (!candidatos) {
+    await tgEnviarMensaje(cfg.token, cfg.chatId, "❌ El panel no está disponible. Recargá la extensión.");
+    return;
+  }
+  if (!candidatos.length) {
+    await tgEnviarMensaje(cfg.token, cfg.chatId, `❌ No encontré requeridos con "<b>${escapeHtml(termino)}</b>".\nProbá con otro término o buscá una parte del nombre.`);
+    return;
+  }
+
+  const datosUnico = await chrome.storage.local.get(KEY_TG_PENDIENTE_UNICO);
+  const pendienteUnico = datosUnico[KEY_TG_PENDIENTE_UNICO];
+  await chrome.storage.local.set({
+    [KEY_TG_PENDIENTE_UNICO]: { ...pendienteUnico, fase: "esperar_seleccion", candidatos }
+  });
+
+  const lineas = candidatos.map(c => {
+    const persona = c.apellido ? ` — ${escapeHtml(c.apellido)}` : "";
+    return `<b>${c.indice}.</b> ${escapeHtml(c.nombre)}${persona}`;
+  });
+  await tgEnviarMensaje(cfg.token, cfg.chatId,
+    `📋 Encontré ${candidatos.length} requerido(s):\n${lineas.join("\n")}\n\nRespondé con los números (ej: <b>1,2,5</b>) o <b>todos</b>.`
+  );
+}
+
+async function tgProcesarSeleccionUnico(texto, cfg) {
+  const datosUnico = await chrome.storage.local.get(KEY_TG_PENDIENTE_UNICO);
+  const pendienteUnico = datosUnico[KEY_TG_PENDIENTE_UNICO];
+  const candidatos = pendienteUnico?.candidatos || [];
+
+  let seleccionados;
+  const limpio = texto.trim().toLowerCase();
+  if (limpio === "todos" || limpio === "todo") {
+    seleccionados = candidatos;
+  } else {
+    const indices = [...new Set((texto.match(/\d+/g) || []).map(n => parseInt(n, 10)))];
+    if (!indices.length) {
+      await tgEnviarMensaje(cfg.token, cfg.chatId, "⚠️ No entendí la selección. Escribí los números (ej: <b>1,2,5</b>) o <b>todos</b>.");
+      return;
+    }
+    const invalidos = indices.filter(i => !candidatos.find(c => c.indice === i));
+    if (invalidos.length) {
+      await tgEnviarMensaje(cfg.token, cfg.chatId, `⚠️ Número(s) inválido(s): ${invalidos.join(", ")}. Disponibles: 1 al ${candidatos.length}.`);
+      return;
+    }
+    seleccionados = candidatos.filter(c => indices.includes(c.indice));
+  }
+
+  await chrome.storage.local.set({
+    [KEY_TG_PENDIENTE_UNICO]: { ...pendienteUnico, fase: "esperar_confirmacion", seleccionados }
+  });
+
+  const lineas = seleccionados.map(c => {
+    const persona = c.apellido ? ` — ${escapeHtml(c.apellido)}` : "";
+    return `• ${escapeHtml(c.nombre)}${persona}`;
+  });
+  await tgEnviarMensaje(cfg.token, cfg.chatId,
+    `📤 ¿Subir <b>${escapeHtml(pendienteUnico.nombreArchivo)}</b> a:\n${lineas.join("\n")}\n\nRespondé <b>si</b> o <b>no</b>.`
+  );
+}
+
+async function tgSubirArchivoUnico(cfg) {
+  const datosUnico = await chrome.storage.local.get(KEY_TG_PENDIENTE_UNICO);
+  const pendienteUnico = datosUnico[KEY_TG_PENDIENTE_UNICO];
+  if (!pendienteUnico?.fileId || !pendienteUnico?.seleccionados?.length) {
+    await tgEnviarMensaje(cfg.token, cfg.chatId, "⚠️ No hay una subida pendiente.");
+    return;
+  }
+
+  const log = (txt) => tgEnviarMensaje(cfg.token, cfg.chatId, txt).catch(e => console.warn("[MAU] log fail", e));
+  const t0 = Date.now();
+
+  await log(`🚀 Subiendo <b>${escapeHtml(pendienteUnico.nombreArchivo)}</b>…\n⏳ Bajando el PDF de Telegram…`);
+
+  let base64;
+  try {
+    const r = await tgBajarArchivo(cfg.token, pendienteUnico.fileId);
+    base64 = r.base64;
+  } catch (e) {
+    await log(`❌ No pude bajar el archivo: ${escapeHtml(e.message || String(e))}`);
+    return;
+  }
+
+  let tabId;
+  try {
+    const tab = await tgConseguirTabBandeja();
+    tabId = tab.tabId;
+  } catch (e) {
+    await log(`❌ Necesitás una pestaña de controldocumentario.com abierta.`);
+    return;
+  }
+
+  await log(`✅ Bandeja abierta.\n⏳ Subiendo archivos…`);
+
+  const nombresReqs = pendienteUnico.seleccionados.map(c => c.nombre);
+
+  let execRes;
+  try {
+    execRes = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: async (b64, fileName, nombresRequeridos) => {
+        const wait = ms => new Promise(r => setTimeout(r, ms));
+        const t0 = Date.now();
+        while (!window.MAUPanel && Date.now() - t0 < 30000) await wait(500);
+        if (!window.MAUPanel) return { ok: false, error: "El panel no está disponible." };
+        const P = window.MAUPanel;
+
+        if (!P.estado.requerimientos?.length) await P.detectarRequerimientosPendientes();
+        if (!P.estado.requerimientos?.length) return { ok: false, error: "No se detectaron requerimientos pendientes." };
+
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const file = new File([bytes], fileName, { type: "application/pdf" });
+
+        P.subirArchivoARequeridos(file, nombresRequeridos);
+
+        const conArchivo = (P.estado.filas || []).filter(f => f.archivo).length;
+        if (!conArchivo) return { ok: false, error: "No se asignó ningún archivo a las filas." };
+
+        const promesaProc = P.procesarTodo();
+        await wait(12000);
+
+        const tSub = Date.now();
+        while (Date.now() - tSub < 900000) {
+          await wait(4000);
+          const filasAhora = (P.estado.filas || []).filter(f => f.archivo);
+          const enProceso = filasAhora.some(f => {
+            const est = String(f.estado || "").toLowerCase();
+            return est === "procesando" || est === "subiendo" || est === "enviando" || est === "pendiente" || est === "";
+          });
+          const hayTerminal = filasAhora.some(f => {
+            const est = String(f.estado || "").toLowerCase();
+            return est === "ok" || est === "enviado" || est === "subido" || est === "completo" || est.startsWith("error");
+          });
+          if (!enProceso && hayTerminal) { await wait(4000); break; }
+        }
+
+        await Promise.race([promesaProc.catch(() => {}), new Promise(r => setTimeout(r, 15000))]);
+
+        const filasFinal = P.estado.filas || [];
+        let okCount = 0, errCount = 0, totalCount = 0;
+        const errores = [];
+        for (const f of filasFinal) {
+          if (!f.archivo) continue;
+          totalCount++;
+          const est = String(f.estado || "").toLowerCase();
+          if (est === "ok" || est === "enviado" || est === "subido" || est === "completo") {
+            okCount++;
+          } else {
+            errCount++;
+            errores.push(`${f.nombre || f.requerimiento || "?"}: ${f.estado}${f.error ? " — " + f.error : ""}`);
+          }
+        }
+        return { ok: true, okCount, errCount, totalCount, errores };
+      },
+      args: [base64, pendienteUnico.nombreArchivo, nombresReqs]
+    });
+  } catch (e) {
+    await log(`❌ Error ejecutando en el panel: ${escapeHtml(e.message || String(e))}`);
+    return;
+  }
+
+  try { await chrome.storage.local.remove(KEY_TG_PENDIENTE_UNICO); } catch {}
+
+  const res = execRes?.[0]?.result || { ok: false, error: "executeScript no devolvió resultado" };
+  const tTotal = Math.round((Date.now() - t0) / 1000);
+
+  if (!res.ok) {
+    await log(`⚠️ La subida no se pudo completar:\n<i>${escapeHtml(res.error || "Razón desconocida")}</i>`);
+    return;
+  }
+
+  if (res.errCount === 0) {
+    await log(`✅ <b>Subido correctamente</b> en ${tTotal}s. (${res.okCount} requerido(s) ok)`);
+  } else {
+    const partes = [
+      `⚠️ <b>Subida completada con errores</b> en ${tTotal}s.`,
+      `📊 ${res.okCount} OK · ${res.errCount} con error · ${res.totalCount} total`,
+      ""
+    ];
+    for (const e of (res.errores || []).slice(0, 10)) {
+      partes.push(`❌ ${escapeHtml(e)}`);
+    }
+    await log(partes.join("\n"));
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function tgManejarComando(cfg, texto) {
   if (!texto) return;
   const limpio = texto.replace(/^\//, "").trim();
+
+  // ── Modo Archivo Único ──────────────────────────────────────────────────
+  if (limpio === "unico" || limpio === "único" || limpio.startsWith("unico ") || limpio === "archivo unico" || limpio === "archivo único") {
+    await tgIniciarModoUnico(cfg);
+    return;
+  }
+
+  const datosUnico = await chrome.storage.local.get(KEY_TG_PENDIENTE_UNICO);
+  const pendienteUnico = datosUnico[KEY_TG_PENDIENTE_UNICO];
+
+  if (pendienteUnico && (limpio === "cancelar" || limpio === "no")) {
+    await chrome.storage.local.remove(KEY_TG_PENDIENTE_UNICO);
+    await tgEnviarMensaje(cfg.token, cfg.chatId, "❌ Cancelado.");
+    return;
+  }
+
+  if (pendienteUnico?.fase === "esperar_nombre") {
+    await tgBuscarRequeridosPorTermino(texto.trim(), cfg);
+    return;
+  }
+
+  if (pendienteUnico?.fase === "esperar_seleccion") {
+    await tgProcesarSeleccionUnico(texto.trim(), cfg);
+    return;
+  }
+
+  if (pendienteUnico?.fase === "esperar_confirmacion") {
+    if (limpio === "si" || limpio === "sí" || limpio === "dale" || limpio === "ok") {
+      await tgSubirArchivoUnico(cfg);
+    } else {
+      await tgEnviarMensaje(cfg.token, cfg.chatId, "Respondé <b>si</b> para subir o <b>no</b> para cancelar.");
+    }
+    return;
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   // Confirmar / cancelar subida de sábana pendiente
   if (limpio === "si" || limpio === "sí" || limpio === "dale" || limpio === "ok") {
@@ -1405,10 +1705,11 @@ async function tgManejarComando(cfg, texto) {
   if (limpio === "help" || limpio === "ayuda" || limpio === "start" || limpio === "comandos") {
     const ayuda = [
       "<b>Comandos disponibles:</b>",
+      "• <b>/unico</b> — subir un archivo a un requerido específico (sin IA).",
       "• <b>/chequear</b> — te manda el resumen de vencimientos ahora.",
       "• <b>/ayuda</b> — muestra este mensaje.",
       "",
-      "También podés escribir sin la barra: <i>chequear</i>, <i>ahora</i>, <i>vencimientos</i>."
+      "También podés escribir sin la barra: <i>unico</i>, <i>chequear</i>, <i>ahora</i>, <i>vencimientos</i>."
     ].join("\n");
     await tgEnviarMensaje(cfg.token, cfg.chatId, ayuda);
     return;
@@ -2852,6 +3153,21 @@ async function tgLeerReferenciasConImagenes(tabId, nombresPatrones) {
 async function tgManejarDocumento(cfg, doc) {
   const nombreArchivo = doc.file_name || "archivo.pdf";
   const fileId = doc.file_id;
+
+  // ── Modo Archivo Único: si estamos esperando el archivo, guardar y pedir requerido ──
+  const datosUnico = await chrome.storage.local.get(KEY_TG_PENDIENTE_UNICO);
+  const pendienteUnico = datosUnico[KEY_TG_PENDIENTE_UNICO];
+  if (pendienteUnico?.fase === "esperar_archivo") {
+    await chrome.storage.local.set({
+      [KEY_TG_PENDIENTE_UNICO]: { ...pendienteUnico, fase: "esperar_nombre", fileId, nombreArchivo }
+    });
+    await tgEnviarMensaje(cfg.token, cfg.chatId,
+      `📎 Archivo recibido: <b>${escapeHtml(nombreArchivo)}</b>\n¿Para qué requerido? Escribí el nombre o parte del nombre.`
+    );
+    return;
+  }
+  // ─────────────────────────────────────────────────────────────────────────────────
+
   const sizeBytes = doc.file_size || 0;
   const t0 = Date.now();
   const log = (txt) => tgEnviarMensaje(cfg.token, cfg.chatId, txt).catch(e => console.warn("[MAU] log fail", e));
