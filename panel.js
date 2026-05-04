@@ -403,16 +403,21 @@
       const celdas = tr.querySelectorAll(":scope > td");
       const recursoData = elegirMejorRecursoDeFila(celdas, idxRecurso, link);
       const fechaTxt = (tr.textContent.match(/(\d{2}\/\d{2}\/\d{4}(?:\s+\d{2}:\d{2})?)/) || [])[1] || "";
-      // Usar el href del link como clave primaria: cada fila del sitio tiene URL única,
-      // lo que evita que filas con mismo nombre de requerimiento se sobreescriban cuando
-      // parsearRecurso no puede extraer el apellido del empleado.
-      const clave = link.href || `${nombre}||${recursoData.apellido}||${recursoData.nombre}`.toLowerCase();
+      // link.href en JS siempre devuelve una URL completa (nunca vacía), incluso para href="#".
+      // Si dos filas de vehículos distintos comparten el mismo href, se pisarían en el Map.
+      // Incluir nombre del requerimiento + patente en la clave para distinguir filas únicas.
+      const patenteKey = (recursoData.patente || "").toLowerCase();
+      const clave = `${link.href}||${nombre}||${patenteKey}`;
       const actual = mapa.get(clave);
       const ts = parsearFechaSitio(fechaTxt);
       if (!actual || ts > (actual.ts || 0)) {
         mapa.set(clave, { nombre, link, recurso: recursoData, ts });
+      } else {
+        console.log(`[MAU][SCAN] Fila descartada (misma clave, ts no mayor): "${nombre}" patente="${recursoData.patente || "-"}"`);
       }
     }
+    console.log(`[MAU][SCAN] Filas únicas en tabla: ${mapa.size}`);
+    Array.from(mapa.values()).forEach((e, i) => console.log(`[MAU][SCAN]   [${i}] "${e.nombre}" patente="${e.recurso?.patente || '-'}" apellido="${e.recurso?.apellido || '-'}"`));
     return mapa;
   }
 
@@ -465,10 +470,12 @@
           reqs.push({ nombre, link: null, recurso: vacios });
         }
       }
-      // Deduplicar por link (la misma fila puede matchear múltiples nombres del sidebar).
+      // Deduplicar: la misma fila puede matchear múltiples nombres del sidebar.
+      // Incluir patente en la clave para no colapsar filas de distintos vehículos con el mismo href.
       const vistos = new Set();
       reqs = reqs.filter(r => {
-        const key = r.link?.href || `${r.nombre}||${r.recurso?.apellido || ""}`;
+        const patKey = (r.recurso?.patente || "").toLowerCase();
+        const key = `${r.link?.href || ""}||${r.nombre}||${patKey}`;
         if (vistos.has(key)) return false;
         vistos.add(key);
         return true;
@@ -602,7 +609,7 @@
           ui.pText.textContent = `Macheando con "${ref.nombre}"…`;
           console.log(`[MAU][TRABAJAR] Probando mapeo "${ref.nombre}"…`);
           try {
-            const resultado = await window.MAUStorage.compararConReferencia(nuevasPaginas, ref);
+            const resultado = await window.MAUStorage.compararConReferencia(nuevasPaginas, agregarEntidadesAlRef(ref));
             if (resultado?.length) {
               console.log(`[MAU][TRABAJAR] ✅ Macheó con "${ref.nombre}": ${resultado.length} bloque(s)`);
               bloquesFinales = resultado;
@@ -2393,6 +2400,37 @@
 
   function quitarPeriodoReq(s) {
     return String(s || "").replace(/-\d{4}-\d+.*$/i, "").trim();
+  }
+
+  // Enriquece cada bloque del ref con las entidades esperadas según CD (estado.filas).
+  // Esto permite pasarle a Claude el listado de personas/patentes conocidas para que
+  // pueda resolver ambigüedades aunque el documento no muestre el identificador claramente.
+  function agregarEntidadesAlRef(ref) {
+    if (!ref?.bloques?.length || !estado.filas?.length) return ref;
+    const bloquesEnriquecidos = ref.bloques.map(bloque => {
+      const entidades = new Set();
+      for (const reqNombre of (bloque.requerimientos || [])) {
+        const base = quitarPeriodoReq(reqNombre);
+        // Buscar TODAS las filas que correspondan a este requerimiento (puede haber varias personas)
+        const filas = estado.filas.filter(f =>
+          f.tipo === "requerimiento" && quitarPeriodoReq(f.requerimiento) === base
+        );
+        for (const fila of filas) {
+          if (!fila.recurso) continue;
+          const pat = fila.recurso.patente || extraerPatenteDeTexto(fila.recurso.textoCompleto || "");
+          // Solo agregar hint si es patente (vehículo) o empleado con CUIL propio.
+          // No agregar si es empresa (apellido genérico del empleador sin CUIL de empleado).
+          if (pat) {
+            entidades.add(pat);
+          } else if (fila.recurso.cuil && fila.recurso.apellido) {
+            entidades.add(fila.recurso.apellido);
+          }
+        }
+      }
+      const arr = Array.from(entidades);
+      return arr.length ? { ...bloque, entidadesEsperadas: arr } : bloque;
+    });
+    return { ...ref, bloques: bloquesEnriquecidos };
   }
 
   function detectarEntidadesMeta(meta) {

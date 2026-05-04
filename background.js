@@ -2446,7 +2446,10 @@ async function compararPaginasConReferencia(nuevasPaginas, referencia) {
   // Mostrar referencias con TODAS sus páginas para que Claude reconozca cada tipo de formulario del bloque
   content.push({ type: "text", text: "BLOQUES DE REFERENCIA (todas las páginas del bloque):\n" });
   bloquesRef.forEach((b, idx) => {
-    content.push({ type: "text", text: `\nRef ${idx + 1}: ${b.nombre || "Bloque"} (${b.imagenesRef.length} tipo(s) de formulario en este bloque)` });
+    const entidadHint = Array.isArray(b.entidadesEsperadas) && b.entidadesEsperadas.length
+      ? ` — entidad esperada: ${b.entidadesEsperadas.join(", ")}`
+      : "";
+    content.push({ type: "text", text: `\nRef ${idx + 1}: ${b.nombre || "Bloque"} (${b.imagenesRef.length} tipo(s) de formulario en este bloque)${entidadHint}` });
     b.imagenesRef.forEach((imgBase64, pIdx) => {
       const firmaRef = b.paginasMeta?.[pIdx];
       const detalleFirma = [];
@@ -2471,22 +2474,23 @@ async function compararPaginasConReferencia(nuevasPaginas, referencia) {
 TAREA: para cada página nueva, determiná a qué Ref pertenece.
 
 CÓMO HACER EL MATCH:
-Cada Ref representa un empleado y tiene uno o más tipos de formulario (Formulario 1, Formulario 2, etc.).
+Cada Ref representa una entidad (empleado, vehículo o empresa) y tiene uno o más tipos de formulario.
 Una página nueva pertenece a un Ref si es del MISMO TIPO de formulario que alguno de sus formularios:
   - Mismo nombre o título del formulario
   - Misma empresa o institución que lo emite
   - Misma estructura general del documento
 
-No importa el orden en que vienen las páginas, la calidad del scan, ni pequeñas diferencias de contenido.
-Lo que importa es si es el MISMO TIPO de formulario.
+Si el Ref tiene "entidad esperada" (patente o nombre de empleado), usala solo para desambiguar cuando dos Refs se ven visualmente similares. El match visual sigue siendo el criterio principal.
+
+No importa el orden de las páginas ni pequeñas diferencias de contenido.
 
 Además, extraé de cada página nueva (si es legible):
-- apellido (si podés, apellido + nombre completo del empleado en el campo apellido)
+- apellido (apellido + nombre completo del empleado; o patente si es documento de vehículo)
 - nombre
-- CUIL del empleado
-- texto_estable: lista breve de palabras visibles y distintivas de esa página, evitando fechas/horas/datos variables cuando no ayuden
+- cuil_leido: CUIL del empleado si aparece
+- texto_estable: palabras visibles y distintivas de esa página, sin fechas ni datos variables
 - marca_pagina: numeración visible tipo "1/2", "2/2" si aparece
-- entidades_mencionadas: array con nombres completos y/o patentes que aparezcan en la página
+- entidades_mencionadas: nombres completos y/o patentes que aparezcan en la página
 
 Si una página definitivamente no es ningún tipo de formulario de ningún Ref → bloque: null.
 
@@ -2549,6 +2553,14 @@ Respondé SOLO JSON válido, sin texto extra:
   const bloquesMapIdx = new Map(); // key: `${refIdx}__${personKey}` → { refBloque, paginas }
   const paginasSinAsignar = new Map(); // key: pagina_nueva -> item sin bloque asignado
 
+  // Extrae patente/identificador de vehículo de un string.
+  // Soporta: ABC123 (viejo), AB123CD (nuevo Mercosur), HTCB22 (maquinaria 4L+2D).
+  const extraerPatente = (s) => {
+    const m = String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, " ")
+      .match(/\b([A-Z]{2,3}\d{3}[A-Z]{0,2}|[A-Z]{4}\d{2,3})\b/);
+    return m ? m[1].replace(/\s+/g, "") : "";
+  };
+
   function resolverMapKeyAnonimo(refIdx, paginaNueva) {
     const candidatos = Array.from(bloquesMapIdx.entries())
       .filter(([, b]) => b.refIdx === refIdx && (b.paginasMapeo || 0) > b.paginas.length);
@@ -2593,14 +2605,14 @@ Respondé SOLO JSON válido, sin texto extra:
     const entidadesPag = Array.isArray(item.entidades_mencionadas)
       ? item.entidades_mencionadas.map((x) => String(x || "").trim()).filter(Boolean)
       : [];
-    const extraerPatente = (s) => {
-      const m = String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, " ").match(/\b([A-Z]{2,3}\s?\d{3}[A-Z]{0,2})\b/);
-      return m ? m[1].replace(/\s+/g, "") : "";
-    };
     const patenteLeida = entidadesPag.map(extraerPatente).find(Boolean) || "";
 
-    // Identificador: CUIL (personas) → apellido → patente (vehículos) → "s/d"
-    const personKey = cuilLeido || apellidoNorm || patenteLeida || "s/d";
+    // Identificador: CUIL → patente (incluida en clave junto al nombre para separar vehículos del mismo titular) → apellido → "s/d"
+    // Cuando hay patente, se combina con el nombre para que cada vehículo quede en su propio bucket.
+    // Páginas sin patente (ej: Seguro Técnico) quedan como "nombre" y luego se redistribuyen por proximidad.
+    const personKey = cuilLeido
+      || (patenteLeida && apellidoNorm ? `${apellidoNorm}__${patenteLeida}` : (patenteLeida || apellidoNorm))
+      || "s/d";
     let mapKey = `${refIdx}__${personKey}`;
 
     // Si la página pertenece al Ref correcto pero no trae identidad legible,
@@ -2620,6 +2632,7 @@ Respondé SOLO JSON válido, sin texto extra:
       bloquesMapIdx.set(mapKey, {
         refIdx,
         personKey,
+        tienePatente: !!patenteLeida,
         nombre: refBloque.nombre,
         paginas: [],
         paginasMapeo: (refBloque.paginas || []).length,
@@ -2644,6 +2657,40 @@ Respondé SOLO JSON válido, sin texto extra:
     if (cuilLeido) metaNuevo.cuil = item.cuil_leido;
     bloquesMapIdx.get(mapKey).meta = metaNuevo;
     bloquesMapIdx.get(mapKey).paginas.push(item.pagina_nueva);
+  }
+
+  // ── Redistribución por patente ──
+  // Cuando el mismo refIdx tiene grupos con patente Y grupos genéricos (solo nombre, sin CUIL ni patente),
+  // las páginas genéricas se reasignan por proximidad al grupo con patente más cercano que aún tenga espacio.
+  // Esto resuelve el caso de vehículos: la página de Seguro Técnico (sin patente) se junta
+  // con la página de Automotores (con patente) del mismo vehículo.
+  {
+    const refIdxSet = new Set([...bloquesMapIdx.values()].map(b => b.refIdx));
+    for (const ri of refIdxSet) {
+      const entradas = [...bloquesMapIdx.entries()].filter(([, b]) => b.refIdx === ri);
+      const conPatente = entradas.filter(([, b]) => b.tienePatente);
+      const sinPatente = entradas.filter(([, b]) => !b.tienePatente && !normCuil(b.personKey));
+      if (!conPatente.length || !sinPatente.length) continue;
+
+      for (const [genericKey, genericBloque] of sinPatente) {
+        const paginasGen = [...genericBloque.paginas].sort((a, b) => a - b);
+        for (const pagNum of paginasGen) {
+          const candidatos = conPatente
+            .filter(([, b]) => (b.paginasMapeo || 0) > b.paginas.length)
+            .sort(([, a], [, b]) => {
+              const distA = a.paginas.length ? Math.min(...a.paginas.map(p => Math.abs(p - pagNum))) : Infinity;
+              const distB = b.paginas.length ? Math.min(...b.paginas.map(p => Math.abs(p - pagNum))) : Infinity;
+              return distA - distB;
+            });
+          if (!candidatos.length) break;
+          const [destKey, destBloque] = candidatos[0];
+          destBloque.paginas.push(pagNum);
+          genericBloque.paginas = genericBloque.paginas.filter(p => p !== pagNum);
+          console.log(`[MAU] Pág ${pagNum} redistribuida → "${destKey}" (patente) por proximidad`);
+        }
+        if (genericBloque.paginas.length === 0) bloquesMapIdx.delete(genericKey);
+      }
+    }
   }
 
   // Rescate conservador para páginas de continuación "muditas" que Claude dejó sin bloque.
