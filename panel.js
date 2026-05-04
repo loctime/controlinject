@@ -407,13 +407,14 @@
       // Si dos filas de vehículos distintos comparten el mismo href, se pisarían en el Map.
       // Incluir nombre del requerimiento + patente en la clave para distinguir filas únicas.
       const patenteKey = (recursoData.patente || "").toLowerCase();
-      const clave = `${link.href}||${nombre}||${patenteKey}`;
+      const apellidoKey = (recursoData.apellido || "").toLowerCase();
+      const clave = `${link.href}||${nombre}||${patenteKey}||${apellidoKey}`;
       const actual = mapa.get(clave);
       const ts = parsearFechaSitio(fechaTxt);
       if (!actual || ts > (actual.ts || 0)) {
         mapa.set(clave, { nombre, link, recurso: recursoData, ts });
       } else {
-        console.log(`[MAU][SCAN] Fila descartada (misma clave, ts no mayor): "${nombre}" patente="${recursoData.patente || "-"}"`);
+        console.log(`[MAU][SCAN] Fila descartada (misma clave, ts no mayor): "${nombre}" patente="${recursoData.patente || "-"}" apellido="${recursoData.apellido || "-"}"`);
       }
     }
     console.log(`[MAU][SCAN] Filas únicas en tabla: ${mapa.size}`);
@@ -475,7 +476,8 @@
       const vistos = new Set();
       reqs = reqs.filter(r => {
         const patKey = (r.recurso?.patente || "").toLowerCase();
-        const key = `${r.link?.href || ""}||${r.nombre}||${patKey}`;
+        const apKey = (r.recurso?.apellido || "").toLowerCase();
+        const key = `${r.link?.href || ""}||${r.nombre}||${patKey}||${apKey}`;
         if (vistos.has(key)) return false;
         vistos.add(key);
         return true;

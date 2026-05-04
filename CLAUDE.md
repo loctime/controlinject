@@ -91,6 +91,9 @@ Los PDFs que se suben en Trabajar NO necesitan tener siempre los mismos document
 - tgRenderPdfEnImagenes devolvía `[base64]` no `[{pagina, base64}]` → corregido
 - APELLIDO UNO DIEGO vs APELLIDO UNO ENRIQUE se confundían → solucionado con nombre completo en parsearRecurso + metaNombreCompleto en asignarArchivoARequerimiento
 - Bloque de 3 páginas subía solo 2 → Claude recibía solo 1 imagen de referencia por bloque (la primera página). Corregido: ahora se mandan TODAS las imágenes del bloque. Claude puede reconocer cualquier formulario del bloque, no solo el primero.
+- Filas de empleados colapsaban en el scan → `escanearFilasTabla` usaba clave `href||nombre||patente` sin apellido; múltiples empleados con el mismo requerimiento quedaban reducidos a 1. Corregido: clave ahora es `href||nombre||patente||apellido`. Mismo fix aplicado al paso de deduplicación en `detectarRequerimientosPendientes`.
+- Todos los requerimientos de vehículos recibían el mismo PDF → `expandirRequerimientosPorDestino` usaba entidades compartidas (nombre de empresa) para discriminar, pero la empresa aparece en todas las filas. Corregido: discriminación por patente es prioridad 1; entidad solo se usa si discrimina (`matcheados.length < candidatos.length`).
+- `asignarArchivoARequerimiento` asignaba vehículos por apellido de empresa → patente es ahora prioridad 1 sobre nombre cuando el bloque tiene patente en metadata.
 
 ## Cosas que NO hacer
 - No agregar clasificación de documentos por texto (reglas de tipos legacy está en background.js pero NO se usa para el flujo principal de matching — solo el mapeo visual manda)
@@ -99,6 +102,7 @@ Los PDFs que se suben en Trabajar NO necesitan tener siempre los mismos document
 - No confundir el CUIL del empleado (en el documento) con el CUIL del empleador (en las filas de CD, que es siempre el de empresa). En los documentos aparece el CUIL del empleador impreso como empresa — si Claude lee ese CUIL y no matchea ningún bloque, NO descartar la página: confiar en el match visual. Solo redirigir si el CUIL leído matchea un bloque DIFERENTE al que asignó Claude.
 - NO descartar bloques válidos de otras personas si una persona tiene páginas faltantes. La validación es POR BLOQUE, no global.
 - No agregar chain-of-thought al prompt de Claude para matching — empeora las asignaciones porque Claude se convence a sí mismo de cosas incorrectas. El prompt debe ser directo y simple.
+- No usar el nombre de la empresa ("MATESIN CLAUDIO FABIAN" u otro proveedor) para discriminar filas de empleados — ese nombre aparece en TODAS las filas de la tabla de CD como columna de proveedor. Solo sirve para discriminar si realmente diferencia los candidatos (guard `matcheados.length < candidatos.length`).
 
 ## Reglas de negocio importantes
 - **El mapeo manda**: si una página coincide visualmente con un bloque del mapeo, se sube. Si no coincide, no se sube. No hay fallback por texto ni por tipo de documento.
@@ -114,7 +118,8 @@ Los PDFs que se suben en Trabajar NO necesitan tener siempre los mismos document
 - Claude recibe TODAS las imágenes de referencia por bloque: funcionando ✓ (páginas desordenadas reconocidas)
 - CUIL del empleador no descarta páginas: funcionando ✓ (confía en match visual cuando el CUIL no es de ningún empleado)
 - Validación por bloque: bloques incompletos se descartan, bloques completos se suben ✓
-- Vehículos: usan patente como identificador (no apellido), funciona aparte
+- Vehículos: discriminación por patente en `expandirRequerimientosPorDestino` y `asignarArchivoARequerimiento` ✓
+- Scan de tabla: clave incluye apellido → múltiples empleados con mismo requerimiento no colapsan ✓
 - Log debug en panel.js (`[MAU][DEBUG]`): hay logs temporales de diagnóstico que se pueden limpiar
 - Log diagnóstico en background.js (`[MAU] Ref X ... imagen(es)`): logs temporales de diagnóstico que se pueden limpiar
 
