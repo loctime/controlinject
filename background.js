@@ -1291,6 +1291,34 @@ async function tgEnviarMensaje(token, chatId, texto) {
   return ultimo;
 }
 
+async function tgEnviarMensajeConBotones(token, chatId, texto, teclado) {
+  const url = `https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: String(texto || ""),
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: teclado }
+    })
+  });
+  if (!resp.ok) {
+    const err = await resp.text().catch(() => "");
+    throw new Error(`Telegram ${resp.status}: ${err.slice(0, 200)}`);
+  }
+  return resp.json();
+}
+
+async function tgResponderCallback(token, callbackId) {
+  await fetch(`https://api.telegram.org/bot${encodeURIComponent(token)}/answerCallbackQuery`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ callback_query_id: callbackId })
+  }).catch(() => {});
+}
+
 async function tgReprogramarAlarma() {
   const cfg = await tgGetConfig();
   try { await chrome.alarms.clear(ALARMA_TG); } catch {}
@@ -1344,7 +1372,7 @@ async function tgProcesarComandos() {
   const data = await chrome.storage.local.get(KEY_TG_UPDATE_OFFSET);
   const offset = typeof data[KEY_TG_UPDATE_OFFSET] === "number" ? data[KEY_TG_UPDATE_OFFSET] : 0;
 
-  const url = `https://api.telegram.org/bot${encodeURIComponent(cfg.token)}/getUpdates?timeout=0&offset=${offset}&allowed_updates=${encodeURIComponent(JSON.stringify(["message"]))}`;
+  const url = `https://api.telegram.org/bot${encodeURIComponent(cfg.token)}/getUpdates?timeout=0&offset=${offset}&allowed_updates=${encodeURIComponent(JSON.stringify(["message", "callback_query"]))}`;
   const resp = await fetch(url);
   if (!resp.ok) return;
   const json = await resp.json();
@@ -1364,6 +1392,15 @@ async function tgProcesarComandos() {
   await chrome.storage.local.set({ [KEY_TG_UPDATE_OFFSET]: nuevoOffset });
 
   for (const upd of updates) {
+    // ¿Es un botón inline (callback_query)?
+    if (upd.callback_query) {
+      const cq = upd.callback_query;
+      if (String(cq.message?.chat?.id) !== String(cfg.chatId)) continue;
+      await tgResponderCallback(cfg.token, cq.id);
+      await tgManejarComando(cfg, String(cq.data || "").trim().toLowerCase());
+      continue;
+    }
+
     const mensaje = upd.message;
     if (!mensaje || !mensaje.chat || String(mensaje.chat.id) !== String(cfg.chatId)) continue;
 
@@ -1446,12 +1483,19 @@ async function tgBuscarRequeridosPorTermino(termino, cfg) {
     [KEY_TG_PENDIENTE_UNICO]: { ...pendienteUnico, fase: "esperar_seleccion", candidatos }
   });
 
-  const lineas = candidatos.map(c => {
-    const persona = c.apellido ? ` — ${escapeHtml(c.apellido)}` : "";
-    return `<b>${c.indice}.</b> ${escapeHtml(c.nombre)}${persona}`;
+  // Botón por candidato (uno por fila para que el texto no se corte)
+  const filasBotones = candidatos.map(c => {
+    const persona = c.apellido ? ` — ${c.apellido}` : "";
+    const etiqueta = `${c.indice}. ${c.nombre}${persona}`.slice(0, 60);
+    return [{ text: etiqueta, callback_data: String(c.indice) }];
   });
-  await tgEnviarMensaje(cfg.token, cfg.chatId,
-    `${lineas.join("\n")}\n\nElegí los números (ej: <b>1,2,5</b>) o escribí <b>todos</b>.`
+  filasBotones.push([
+    { text: "Todos", callback_data: "todos" },
+    { text: "❌ Cancelar", callback_data: "cancelar" }
+  ]);
+  await tgEnviarMensajeConBotones(cfg.token, cfg.chatId,
+    `Encontré <b>${candidatos.length}</b> requerido(s). ¿A cuál subimos?`,
+    filasBotones
   );
 }
 
@@ -1486,8 +1530,12 @@ async function tgProcesarSeleccionUnico(texto, cfg) {
     const persona = c.apellido ? ` — ${escapeHtml(c.apellido)}` : "";
     return `• ${escapeHtml(c.nombre)}${persona}`;
   });
-  await tgEnviarMensaje(cfg.token, cfg.chatId,
-    `¿Subir <b>${escapeHtml(pendienteUnico.nombreArchivo)}</b> a:\n${lineas.join("\n")}\n\n<i>si</i> para confirmar · <i>no</i> para cancelar`
+  await tgEnviarMensajeConBotones(cfg.token, cfg.chatId,
+    `¿Subir <b>${escapeHtml(pendienteUnico.nombreArchivo)}</b> a:\n${lineas.join("\n")}`,
+    [[
+      { text: "✅ Sí, subir", callback_data: "si" },
+      { text: "❌ Cancelar",  callback_data: "cancelar" }
+    ]]
   );
 }
 
@@ -3326,11 +3374,15 @@ async function tgManejarDocumento(cfg, doc) {
       ? `\n\n${lineasDescartadas.join("\n")}`
       : "";
 
-    await log(
+    await tgEnviarMensajeConBotones(cfg.token, cfg.chatId,
       `✅ <b>${bloquesFinales.length} coincidencia${bloquesFinales.length > 1 ? "s" : ""}</b>:\n` +
       lineasResumen.join("\n") +
       parteDescartados +
-      `\n\n¿Subimos? Respondé <i>si</i> o <i>no</i>.`
+      `\n\n¿Subimos?`,
+      [[
+        { text: "✅ Sí, subir", callback_data: "si" },
+        { text: "❌ Cancelar",  callback_data: "no" }
+      ]]
     );
 
   } finally {
