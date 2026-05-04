@@ -982,25 +982,43 @@
       // Única fila con este nombre → asignar directo.
       filaDestino = filasCoincidentes[0];
       console.log(`[MAU][ASIGNAR] Única fila → id=${filaDestino.id}`);
-    } else if (!filaDestino && metadata && (metadata.apellido || metadata.nombre)) {
+    } else if (!filaDestino && metadata && (metadata.apellido || metadata.nombre || metadata.patente)) {
       // Múltiples filas con mismo nombre → usar metadata para elegir la correcta.
-      // Construir nombre completo: apellido + nombre para distinguir personas
-      // con el mismo apellido.
+      const metaPatente = (metadata.patente || "").toLowerCase();
       const metaNombreCompleto = [metadata.apellido, metadata.nombre].filter(Boolean).join(" ").toLowerCase();
       const metaApellido = metaNombreCompleto || (metadata.apellido || "").toLowerCase();
-      console.log(`[MAU][ASIGNAR] Buscando por metadata: nombre="${metaApellido}"`);
-      for (const f of filasCoincidentes) {
-        if (!f.recurso) continue;
-        const recApellido = (f.recurso.apellido || "").toLowerCase();
-        // Match por nombre completo → preferir fila vacía sobre fila con archivo
-        if (metaApellido && recApellido && (recApellido.includes(metaApellido) || metaApellido.includes(recApellido))) {
-          const esMejorQueActual = !filaDestino || (f.archivo == null && filaDestino.archivo != null);
-          if (esMejorQueActual) {
-            filaDestino = f;
-            console.log(`[MAU][ASIGNAR] Match nombre completo → id=${f.id} vacía=${!f.archivo}`);
+      console.log(`[MAU][ASIGNAR] Buscando por metadata: nombre="${metaApellido}" patente="${metaPatente}"`);
+
+      // 1° intento: match por patente (vehículos)
+      if (metaPatente) {
+        for (const f of filasCoincidentes) {
+          if (!f.recurso) continue;
+          const recPatente = (f.recurso.patente || "").toLowerCase();
+          if (recPatente && recPatente === metaPatente) {
+            const esMejorQueActual = !filaDestino || (f.archivo == null && filaDestino.archivo != null);
+            if (esMejorQueActual) {
+              filaDestino = f;
+              console.log(`[MAU][ASIGNAR] Match patente "${metaPatente}" → id=${f.id} vacía=${!f.archivo}`);
+            }
           }
         }
       }
+
+      // 2° intento: match por nombre completo (personas)
+      if (!filaDestino && metaApellido) {
+        for (const f of filasCoincidentes) {
+          if (!f.recurso) continue;
+          const recApellido = (f.recurso.apellido || "").toLowerCase();
+          if (recApellido && (recApellido.includes(metaApellido) || metaApellido.includes(recApellido))) {
+            const esMejorQueActual = !filaDestino || (f.archivo == null && filaDestino.archivo != null);
+            if (esMejorQueActual) {
+              filaDestino = f;
+              console.log(`[MAU][ASIGNAR] Match nombre completo → id=${f.id} vacía=${!f.archivo}`);
+            }
+          }
+        }
+      }
+
       // Sin match por recurso → primera fila vacía, o cualquiera como último recurso
       if (!filaDestino) {
         filaDestino = filasCoincidentes.find((f) => !f.archivo) || filasCoincidentes[0];
@@ -2503,22 +2521,38 @@
       }
       // Regla general: si el requerido existe para varias filas/personas, asignar a todas.
       if (candidatos.length > 1) {
+        // 1° intento: discriminar por patente directa del bloque.
+        // El nombre del dueño es compartido por todos sus vehículos — no sirve para discriminar.
+        // La patente sí es única por vehículo → si filtra a un subconjunto real, usarla sola.
+        const metaPatente = normalizarEntidadClave(meta?.patente || "");
+        if (metaPatente) {
+          const porPatente = candidatos.filter((r) => {
+            const pat = normalizarEntidadClave(r.recurso?.patente || "");
+            return pat && pat === metaPatente;
+          });
+          if (porPatente.length > 0 && porPatente.length < candidatos.length) {
+            porPatente.forEach((r) => salida.push(uidReq(r)));
+            continue;
+          }
+        }
+
+        // 2° intento: entidades completas (personas, sin patente compartida)
         const entidadesMeta = detectarEntidadesMeta(meta);
         if (entidadesMeta.length) {
           const matcheados = candidatos.filter((r) => {
             const nombreEntidad = [r.recurso?.apellido, r.recurso?.nombre].filter(Boolean).join(" ");
-            // Buscar patente en el nombre del requerimiento Y en el texto completo del recurso
-            // (para vehículos, la patente aparece en la columna del recurso, no en el nombre del requerimiento)
             const patenteEnReq = extraerPatenteDeTexto(r.nombre);
             const patenteEnRecurso = extraerPatenteDeTexto(r.recurso?.textoCompleto || "");
+            const patenteDirecta = r.recurso?.patente || "";
             const claves = [
               normalizarEntidadClave(nombreEntidad),
               normalizarEntidadClave(patenteEnReq),
-              normalizarEntidadClave(patenteEnRecurso)
+              normalizarEntidadClave(patenteEnRecurso),
+              normalizarEntidadClave(patenteDirecta)
             ].filter(Boolean);
             return claves.some((k) => entidadesMeta.some((m) => esEntidadCompatible(k, m)));
           });
-          if (matcheados.length) {
+          if (matcheados.length && matcheados.length < candidatos.length) {
             matcheados.forEach((r) => salida.push(uidReq(r)));
             continue;
           }
@@ -2555,6 +2589,7 @@
       const etiqueta = (b.nombre || "bloque").replace(/[/\\?%*:|"<>]/g, "-").slice(0, 60);
       const archivo = new File([out], `${file.name.replace(/\.pdf$/i, "")}-${etiqueta}.pdf`, { type: "application/pdf" });
       const requerimientosExpand = expandirRequerimientosPorDestino(b.requerimientos, b.destino, b.meta || null);
+      console.log(`[MAU][MODAL] Bloque "${b.nombre}" paginas=${JSON.stringify(b.paginas)} meta=${JSON.stringify(b.meta)} reqs_base=${JSON.stringify(b.requerimientos)} reqs_expand=${JSON.stringify(requerimientosExpand)}`);
       archivosPorBloque.push({
         archivo,
         requerimientos: requerimientosExpand,
@@ -2565,6 +2600,7 @@
 
     // Asignar cada archivo a sus requerimientos (uno puede ir a varios)
     for (const item of archivosPorBloque) {
+      console.log(`[MAU][MODAL] Asignando "${item.archivo.name}" meta.patente="${item.meta?.patente||'-'}" → reqs: ${JSON.stringify(item.requerimientos)}`);
       for (const nombreReq of item.requerimientos) {
         // Duplicar el File para cada requerimiento (por seguridad al subir)
         const copia = new File([await item.archivo.arrayBuffer()], item.archivo.name, { type: "application/pdf" });
