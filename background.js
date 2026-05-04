@@ -1389,7 +1389,7 @@ async function tgProcesarComandos() {
 async function tgIniciarModoUnico(cfg) {
   await chrome.storage.local.remove(KEY_TG_PENDIENTE_UNICO);
   await chrome.storage.local.set({ [KEY_TG_PENDIENTE_UNICO]: { fase: "esperar_archivo" } });
-  await tgEnviarMensaje(cfg.token, cfg.chatId, "📤 Modo archivo único activado.\nEnviame el archivo PDF.");
+  await tgEnviarMensaje(cfg.token, cfg.chatId, "📄 Mandame el PDF que querés subir.");
 }
 
 async function tgBuscarRequeridosPorTermino(termino, cfg) {
@@ -1451,7 +1451,7 @@ async function tgBuscarRequeridosPorTermino(termino, cfg) {
     return `<b>${c.indice}.</b> ${escapeHtml(c.nombre)}${persona}`;
   });
   await tgEnviarMensaje(cfg.token, cfg.chatId,
-    `📋 Encontré ${candidatos.length} requerido(s):\n${lineas.join("\n")}\n\nRespondé con los números (ej: <b>1,2,5</b>) o <b>todos</b>.`
+    `${lineas.join("\n")}\n\nElegí los números (ej: <b>1,2,5</b>) o escribí <b>todos</b>.`
   );
 }
 
@@ -1487,7 +1487,7 @@ async function tgProcesarSeleccionUnico(texto, cfg) {
     return `• ${escapeHtml(c.nombre)}${persona}`;
   });
   await tgEnviarMensaje(cfg.token, cfg.chatId,
-    `📤 ¿Subir <b>${escapeHtml(pendienteUnico.nombreArchivo)}</b> a:\n${lineas.join("\n")}\n\nRespondé <b>si</b> o <b>no</b>.`
+    `¿Subir <b>${escapeHtml(pendienteUnico.nombreArchivo)}</b> a:\n${lineas.join("\n")}\n\n<i>si</i> para confirmar · <i>no</i> para cancelar`
   );
 }
 
@@ -1502,7 +1502,7 @@ async function tgSubirArchivoUnico(cfg) {
   const log = (txt) => tgEnviarMensaje(cfg.token, cfg.chatId, txt).catch(e => console.warn("[MAU] log fail", e));
   const t0 = Date.now();
 
-  await log(`🚀 Subiendo <b>${escapeHtml(pendienteUnico.nombreArchivo)}</b>…\n⏳ Bajando el PDF de Telegram…`);
+  await log(`⏳ Subiendo <b>${escapeHtml(pendienteUnico.nombreArchivo)}</b>…`);
 
   let base64;
   try {
@@ -1521,8 +1521,6 @@ async function tgSubirArchivoUnico(cfg) {
     await log(`❌ Necesitás una pestaña de controldocumentario.com abierta.`);
     return;
   }
-
-  await log(`✅ Bandeja abierta.\n⏳ Subiendo archivos…`);
 
   const nombresReqs = pendienteUnico.seleccionados.map(c => c.nombre);
 
@@ -1605,16 +1603,13 @@ async function tgSubirArchivoUnico(cfg) {
   }
 
   if (res.errCount === 0) {
-    await log(`✅ <b>Subido correctamente</b> en ${tTotal}s. (${res.okCount} requerido(s) ok)`);
+    await log(`✅ <b>Subido en ${tTotal}s</b> — ${res.okCount} requerido(s) ok`);
   } else {
     const partes = [
-      `⚠️ <b>Subida completada con errores</b> en ${tTotal}s.`,
-      `📊 ${res.okCount} OK · ${res.errCount} con error · ${res.totalCount} total`,
+      `⚠️ <b>Subida con errores</b> (${tTotal}s) — ${res.okCount} OK · ${res.errCount} error(es)`,
       ""
     ];
-    for (const e of (res.errores || []).slice(0, 10)) {
-      partes.push(`❌ ${escapeHtml(e)}`);
-    }
+    for (const e of (res.errores || []).slice(0, 10)) partes.push(`❌ ${escapeHtml(e)}`);
     await log(partes.join("\n"));
   }
 }
@@ -1703,17 +1698,25 @@ async function tgManejarComando(cfg, texto) {
     return;
   }
   if (limpio === "help" || limpio === "ayuda" || limpio === "start" || limpio === "comandos") {
-    const ayuda = [
-      "<b>Comandos disponibles:</b>",
-      "• <b>/unico</b> — subir un archivo a un requerido específico (sin IA).",
-      "• <b>/chequear</b> — te manda el resumen de vencimientos ahora.",
-      "• <b>/ayuda</b> — muestra este mensaje.",
-      "",
-      "También podés escribir sin la barra: <i>unico</i>, <i>chequear</i>, <i>ahora</i>, <i>vencimientos</i>."
-    ].join("\n");
-    await tgEnviarMensaje(cfg.token, cfg.chatId, ayuda);
+    await tgEnviarMensaje(cfg.token, cfg.chatId, tgMensajeAyuda());
     return;
   }
+
+  // Texto no reconocido — mostrar opciones
+  await tgEnviarMensaje(cfg.token, cfg.chatId,
+    `No entendí ese mensaje.\n\n` + tgMensajeAyuda()
+  );
+}
+
+function tgMensajeAyuda() {
+  return [
+    "<b>¿Qué puedo hacer?</b>",
+    "",
+    "📄 <b>Mandame un PDF</b> — lo proceso y lo subo automáticamente",
+    "📤 /unico — subir un archivo a un requerido específico",
+    "🔔 /chequear — ver vencimientos ahora",
+    "❓ /ayuda — mostrar este mensaje"
+  ].join("\n");
 }
 
 chrome.runtime.onStartup.addListener(() => { tgReprogramarAlarma().catch(() => {}); });
@@ -3019,14 +3022,14 @@ async function tgConfirmarSubidaDoc(cfg) {
   const log = (txt) => tgEnviarMensaje(cfg.token, cfg.chatId, txt).catch(e => console.warn("[MAU] log fail", e));
   const t0 = Date.now();
 
-  await log(`🚀 Subiendo <b>${escapeHtml(pendiente.nombreArchivo)}</b>…\n⏳ Re-bajando el PDF de Telegram…`);
+  await log(`⏳ Subiendo <b>${escapeHtml(pendiente.nombreArchivo)}</b>…`);
 
   let base64;
   try {
     const r = await tgBajarArchivo(cfg.token, pendiente.fileId);
     base64 = r.base64;
   } catch (e) {
-    await log(`❌ No pude re-bajar el archivo: ${escapeHtml(e.message || String(e))}`);
+    await log(`❌ No pude bajar el archivo: ${escapeHtml(e.message || String(e))}`);
     return true;
   }
 
@@ -3038,8 +3041,6 @@ async function tgConfirmarSubidaDoc(cfg) {
     await log(`❌ Necesitás una pestaña de controldocumentario.com abierta.`);
     return true;
   }
-
-  await log(`✅ Bandeja abierta.\n⏳ Subiendo archivos…`);
 
   let res;
   try {
@@ -3059,24 +3060,21 @@ async function tgConfirmarSubidaDoc(cfg) {
     return true;
   }
 
-  // Armar lista de personas de los bloques subidos
-  const personas = (pendiente.bloques || []).map(b => b.meta?.apellido || "").filter(Boolean);
+  const personas = (pendiente.bloques || [])
+    .map(b => b.meta?.apellido || b.meta?.patente || "")
+    .filter(Boolean);
 
   if (res.errCount === 0) {
-    const lineasOk = personas.map(p => `✅ Requerimiento encontrado y subido para <b>${escapeHtml(p)}</b>`);
-    await log(
-      `✅ <b>Todos los archivos fueron subidos correctamente</b> en ${tTotal}s.\n\n` +
-      lineasOk.join("\n")
-    );
+    const lineasOk = personas.length
+      ? personas.map(p => `✅ <b>${escapeHtml(p)}</b>`)
+      : [`✅ ${res.okCount} requerido(s) subido(s)`];
+    await log(`✅ <b>Subido en ${tTotal}s</b>\n\n${lineasOk.join("\n")}`);
   } else {
     const partes = [
-      `⚠️ <b>Subida completada con errores</b> en ${tTotal}s.`,
-      `📊 ${res.okCount} OK · ${res.errCount} con error · ${res.totalCount} total`,
+      `⚠️ <b>Subida con errores</b> (${tTotal}s) — ${res.okCount} OK · ${res.errCount} error(es)`,
       ""
     ];
-    for (const e of (res.errores || []).slice(0, 10)) {
-      partes.push(`❌ ${escapeHtml(e)}`);
-    }
+    for (const e of (res.errores || []).slice(0, 10)) partes.push(`❌ ${escapeHtml(e)}`);
     await log(partes.join("\n"));
   }
 
@@ -3097,15 +3095,13 @@ async function tgConfirmarSubidaSabana(cfg) {
   const log = (txt) => tgEnviarMensaje(cfg.token, cfg.chatId, txt).catch(e => console.warn("[MAU] log fail", e));
   const t0 = Date.now();
 
-  await log(`🚀 Arrancando subida de <b>${escapeHtml(pendiente.nombreArchivo)}</b>…\n⏳ Paso 1/4: re-bajando el PDF de Telegram…`);
+  await log(`⏳ Subiendo <b>${escapeHtml(pendiente.nombreArchivo)}</b>…`);
 
   // Re-bajar el PDF original (no lo guardamos para no llenar la memoria)
   const { base64 } = await tgBajarArchivo(cfg.token, pendiente.fileId);
-  await log(`✅ Bajado.\n⏳ Paso 2/4: abriendo Bandeja.aspx en el navegador…`);
 
   // Abrir/encontrar Bandeja
   const { tabId } = await tgConseguirTabBandeja();
-  await log(`✅ Bandeja abierta.\n⏳ Paso 3/4: inyectando el PDF en el panel y disparando OCR + asignación…\n💡 Esto tarda 1-3 min según el tamaño.`);
 
   // Disparar el flujo en el panel — usa los bloques YA armados en Etapa 1 (sin Claude extra)
   const bloques = (pendiente.plan && Array.isArray(pendiente.plan.bloques)) ? pendiente.plan.bloques : [];
@@ -3122,22 +3118,22 @@ async function tgConfirmarSubidaSabana(cfg) {
   }
 
   if (!res.ok) {
-    await log(`⚠️ La subida no se pudo completar:\n<i>${escapeHtml(res.error || "Razón desconocida")}</i>\n\nProbá a mano desde el panel de Bandeja.aspx.`);
+    await log(`⚠️ No se pudo completar la subida:\n<i>${escapeHtml(res.error || "Razón desconocida")}</i>`);
     return;
   }
 
   const tTotal = Math.round((Date.now() - t0) / 1000);
-  const partes = [
-    `✅ <b>Subida terminada</b> en ${tTotal}s.`,
-    `📊 ${res.okCount} OK · ${res.errCount} con error · ${res.totalCount} total`
-  ];
-  if (res.errores && res.errores.length) {
-    partes.push("");
-    partes.push("<b>Errores:</b>");
+  if (res.errCount === 0) {
+    await log(`✅ <b>Subido en ${tTotal}s</b> — ${res.okCount} requerido(s) ok`);
+  } else {
+    const partes = [
+      `⚠️ <b>Subida con errores</b> (${tTotal}s) — ${res.okCount} OK · ${res.errCount} error(es)`,
+      ""
+    ];
     for (const e of res.errores.slice(0, 10)) partes.push(`❌ ${escapeHtml(e)}`);
     if (res.errores.length > 10) partes.push(`…y ${res.errores.length - 10} más.`);
+    await log(partes.join("\n"));
   }
-  await log(partes.join("\n"));
 
   // Limpiar pendiente
   try { await chrome.storage.local.remove(KEY_TG_PENDIENTE_SABANA); } catch {}
@@ -3217,7 +3213,7 @@ async function tgManejarDocumento(cfg, doc) {
       [KEY_TG_PENDIENTE_UNICO]: { ...pendienteUnico, fase: "esperar_nombre", fileId, nombreArchivo }
     });
     await tgEnviarMensaje(cfg.token, cfg.chatId,
-      `📎 Archivo recibido: <b>${escapeHtml(nombreArchivo)}</b>\n¿Para qué requerido? Escribí el nombre o parte del nombre.`
+      `📎 <b>${escapeHtml(nombreArchivo)}</b> — ¿Para qué requerido? Escribí el nombre o parte.`
     );
     return;
   }
@@ -3227,7 +3223,7 @@ async function tgManejarDocumento(cfg, doc) {
   const t0 = Date.now();
   const log = (txt) => tgEnviarMensaje(cfg.token, cfg.chatId, txt).catch(e => console.warn("[MAU] log fail", e));
 
-  await log(`📩 <b>Documento recibido</b>: ${escapeHtml(nombreArchivo)} (${(sizeBytes / 1024).toFixed(0)} KB)\n⏳ Bajando de Telegram…`);
+  await log(`📩 <b>${escapeHtml(nombreArchivo)}</b> (${(sizeBytes / 1024).toFixed(0)} KB) — ⏳ Revisando…`);
 
   // 1) Bajar el PDF
   let base64, realSize;
@@ -3241,7 +3237,6 @@ async function tgManejarDocumento(cfg, doc) {
   }
 
   // 2) Conseguir tab de Bandeja (necesaria para renderizar y luego subir)
-  await log(`✅ Bajado (${(realSize / 1024).toFixed(0)} KB).\n⏳ Abriendo controldocumentario.com…`);
   let tabId, abrimosNosotros;
   try {
     const tab = await tgConseguirTabBandeja();
@@ -3254,18 +3249,17 @@ async function tgManejarDocumento(cfg, doc) {
 
   try {
     // 3) Renderizar páginas como imágenes
-    await log(`✅ Listo.\n⏳ Renderizando páginas como imágenes…`);
+    await log(`⏳ Procesando páginas…`);
     let nuevasPaginas;
     try {
       nuevasPaginas = await tgRenderPdfEnImagenes(base64, tabId);
       if (!nuevasPaginas.length) throw new Error("No se renderizó ninguna página.");
     } catch (e) {
-      await log(`❌ Necesitás una pestaña de controldocumentario.com abierta.\n${escapeHtml(e.message || String(e))}`);
+      await log(`❌ No se pudo procesar el PDF. Asegurate de tener controldocumentario.com abierto.\n${escapeHtml(e.message || String(e))}`);
       return;
     }
 
     // 4) Cargar referencias del mapeo desde IndexedDB del tab
-    await log(`✅ ${nuevasPaginas.length} página(s) renderizada(s).\n⏳ Cargando mapeo guardado…`);
     const dataPatrones = await chrome.storage.local.get(KEY_PATRONES_SABANA);
     const patrones = (dataPatrones[KEY_PATRONES_SABANA] || []).filter(p => p.nombre);
     if (!patrones.length) {
@@ -3279,7 +3273,7 @@ async function tgManejarDocumento(cfg, doc) {
     }
 
     // 5) Claude machea imagen vs imagen — 1 sola llamada por mapeo hasta encontrar
-    await log(`⏳ Claude macheando el documento con el mapeo (${referenciasDisponibles.length} mapeo(s))…`);
+    await log(`⏳ Comparando con el mapeo…`);
     let bloquesFinales = null;
     let bloquesDescartados = [];
     for (const ref of referenciasDisponibles) {
@@ -3312,35 +3306,31 @@ async function tgManejarDocumento(cfg, doc) {
 
     // Armar resumen de coincidencias para mostrar al usuario
     const lineasResumen = bloquesFinales.map(b => {
-      const persona = b.meta?.apellido || "Sin nombre";
+      const persona = b.meta?.apellido || b.meta?.patente || "";
       const nPagsDoc = (b.paginas || []).length;
       const nPagsMapeo = b.paginasMapeo || nPagsDoc;
-      return (
-        `👤 <b>${escapeHtml(persona)}</b>\n` +
-        `   Bloque original: ${nPagsMapeo} pág${nPagsMapeo !== 1 ? "s" : ""}. · Tu documento: ${nPagsDoc} pág${nPagsDoc !== 1 ? "s" : ""}. ✅ Macheado correctamente`
-      );
+      const label = persona ? `✅ <b>${escapeHtml(persona)}</b>` : `✅ Bloque ${nPagsMapeo} pág${nPagsMapeo !== 1 ? "s" : ""}`;
+      return `${label} — ${nPagsDoc} pág${nPagsDoc !== 1 ? "s" : ""} listas`;
     });
 
     // Mostrar también los bloques descartados por páginas incompletas
     const lineasDescartadas = bloquesDescartados.map(b => {
-      const persona = b.meta?.apellido || "Sin nombre";
+      const persona = b.meta?.apellido || b.meta?.patente || "";
       const nPagsDoc = (b.paginas || []).length;
       const nPagsMapeo = b.paginasMapeo || 0;
-      return (
-        `👤 <b>${escapeHtml(persona)}</b>\n` +
-        `   Bloque original: ${nPagsMapeo} pág${nPagsMapeo !== 1 ? "s" : ""}. · Tu documento: ${nPagsDoc} pág${nPagsDoc !== 1 ? "s" : ""}. ⚠️ Páginas incompletas — NO se sube`
-      );
+      const label = persona ? `⚠️ <b>${escapeHtml(persona)}</b>` : `⚠️ Bloque ${nPagsMapeo} pág${nPagsMapeo !== 1 ? "s" : ""}`;
+      return `${label} — ${nPagsDoc}/${nPagsMapeo} págs, incompleto, no se sube`;
     });
 
     const parteDescartados = lineasDescartadas.length
-      ? `\n\n<b>No se van a subir (páginas incompletas):</b>\n\n` + lineasDescartadas.join("\n\n")
+      ? `\n\n${lineasDescartadas.join("\n")}`
       : "";
 
     await log(
-      `✅ Coincidencia${bloquesFinales.length > 1 ? "s" : ""} encontrada${bloquesFinales.length > 1 ? "s" : ""}:\n\n` +
-      lineasResumen.join("\n\n") +
+      `✅ <b>${bloquesFinales.length} coincidencia${bloquesFinales.length > 1 ? "s" : ""}</b>:\n` +
+      lineasResumen.join("\n") +
       parteDescartados +
-      `\n\n¿Lo subimos? Respondé <b>SI</b> para confirmar.`
+      `\n\n¿Subimos? Respondé <i>si</i> o <i>no</i>.`
     );
 
   } finally {
