@@ -2587,10 +2587,20 @@ Respondé SOLO JSON válido, sin texto extra:
     let refBloque = bloquesRef[refIdx];
 
     const cuilLeido = normCuil(item.cuil_leido);
-    // Identificador de persona: CUIL (más confiable) o nombre normalizado como fallback.
-    // Si no se puede leer nada, todas las páginas sin identificar van a una entrada "s/d".
     const apellidoNorm = normalizar(String(item.apellido || "").trim());
-    const personKey = cuilLeido || apellidoNorm || "s/d";
+
+    // Para vehículos: extraer patente de entidades_mencionadas como identificador.
+    const entidadesPag = Array.isArray(item.entidades_mencionadas)
+      ? item.entidades_mencionadas.map((x) => String(x || "").trim()).filter(Boolean)
+      : [];
+    const extraerPatente = (s) => {
+      const m = String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, " ").match(/\b([A-Z]{2,3}\s?\d{3}[A-Z]{0,2})\b/);
+      return m ? m[1].replace(/\s+/g, "") : "";
+    };
+    const patenteLeida = entidadesPag.map(extraerPatente).find(Boolean) || "";
+
+    // Identificador: CUIL (personas) → apellido → patente (vehículos) → "s/d"
+    const personKey = cuilLeido || apellidoNorm || patenteLeida || "s/d";
     let mapKey = `${refIdx}__${personKey}`;
 
     // Si la página pertenece al Ref correcto pero no trae identidad legible,
@@ -2605,7 +2615,7 @@ Respondé SOLO JSON válido, sin texto extra:
       }
     }
 
-    console.log(`[MAU] Pág ${item.pagina_nueva} → Ref ${refIdx+1} "${refBloque.nombre || "Bloque"}" CUIL=${cuilLeido || "(sin cuil)"} persona="${personKey}"`);
+    console.log(`[MAU] Pág ${item.pagina_nueva} → Ref ${refIdx+1} "${refBloque.nombre || "Bloque"}" CUIL=${cuilLeido || "(sin cuil)"} patente=${patenteLeida || "(sin patente)"} persona="${personKey}"`);
     if (!bloquesMapIdx.has(mapKey)) {
       bloquesMapIdx.set(mapKey, {
         refIdx,
@@ -2624,11 +2634,9 @@ Respondé SOLO JSON válido, sin texto extra:
       apellido: metaActual.apellido || String(item.apellido || "").trim(),
       nombre: metaActual.nombre || String(item.nombre || "").trim()
     };
+    if (patenteLeida && !metaActual.patente) metaNuevo.patente = patenteLeida;
     if (String(item.texto_estable || "").trim()) metaNuevo.texto_estable = metaActual.texto_estable || String(item.texto_estable || "").trim();
     if (String(item.marca_pagina || "").trim()) metaNuevo.marca_pagina = metaActual.marca_pagina || String(item.marca_pagina || "").trim();
-    const entidadesPag = Array.isArray(item.entidades_mencionadas)
-      ? item.entidades_mencionadas.map((x) => String(x || "").trim()).filter(Boolean)
-      : [];
     if (entidadesPag.length) {
       const prev = Array.isArray(metaActual.entidades_mencionadas) ? metaActual.entidades_mencionadas : [];
       metaNuevo.entidades_mencionadas = Array.from(new Set([...prev, ...entidadesPag]));

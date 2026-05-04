@@ -12,12 +12,12 @@ Extensión de Chrome (Manifest V3) que automatiza la subida de documentos PDF a 
 | `imagedb.js` | IndexedDB `mau_imagedb` — guarda imágenes de referencia del mapeo |
 | `storage.js` | Puente entre panel.js y background.js (mensajes postMessage) |
 | `ocr-engine.js` | Renderiza páginas PDF a imágenes (base64) y extrae texto con Claude |
-| `modal-seleccion.js` | Modal visual para el mapeo (Aprender) |
+| `modal-seleccion.js` | Modal visual para el mapeo (Mis Mapeos) |
 | `matcher.js` | Lógica de matching de patrones de texto |
 
 ## Flujo principal — cómo funciona
 
-### Aprender (mapear)
+### Mis Mapeos (mapear)
 1. Usuario sube una sábana PDF al panel
 2. `modal-seleccion.js` muestra thumbnails de páginas para asignar bloques
 3. Claude (via `extraerTextoPorPagina`) lee CUIL, apellido, nombre de cada página
@@ -75,13 +75,13 @@ Los PDFs que se suben en Trabajar NO necesitan tener siempre los mismos document
 
 **Cómo agregar un formulario nuevo hoy:**
 1. Preparar un PDF de referencia que incluya todos los docs (viejos + nuevo)
-2. Abrir Aprender y subir ese PDF
+2. Abrir Mis Mapeos y subir ese PDF
 3. Elegir el patrón existente → los bloques cargan con nombres/reqs pero sin páginas
 4. Asignar las páginas a cada bloque en el modal (incluyendo las del formulario nuevo)
 5. Si el formulario nuevo es opcional, crearlo como un bloque separado
 6. Confirmar → el patrón se actualiza, la memoria existente queda intacta
 
-**Este cambio NO afecta Trabajar, Telegram, ni el matching visual. Solo cambia la UI de Aprender.**
+**Este cambio NO afecta Trabajar, Telegram, ni el matching visual. Solo cambia la UI de Mis Mapeos.**
 
 ## Bugs resueltos (no volver atrás)
 - Bloques colapsaban en Map por nombre genérico "Bloque" → usar índice como clave
