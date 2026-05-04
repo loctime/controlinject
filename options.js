@@ -16,8 +16,6 @@ const fbPasswordEl = document.getElementById("fb-password");
 const fbLoginFormEl = document.getElementById("login-form");
 const fbLoginInfoEl = document.getElementById("login-info");
 const fbUserLabelEl = document.getElementById("fb-user-label");
-const cfBaseUrlEl = document.getElementById("cf-baseurl");
-const cfDebugOutputEl = document.getElementById("cf-debug-output");
 
 function mostrar(msg, tipo) {
   estadoEl.textContent = msg;
@@ -40,7 +38,6 @@ async function actualizarUILogin() {
 
 async function cargarConfig() {
   await actualizarUILogin();
-  await cargarControlFileBaseUrl();
   try {
     const r = await chrome.runtime.sendMessage({ action: "auth:getCreds" });
     if (r?.ok) {
@@ -68,61 +65,29 @@ async function cargarConfig() {
   }
 }
 
-async function cargarControlFileBaseUrl() {
-  try {
-    const r = await chrome.runtime.sendMessage({ action: "controlfile:getBaseUrl" });
-    if (r?.ok && cfBaseUrlEl) cfBaseUrlEl.value = r.data?.baseUrl || "";
-  } catch (_) {
-    // Silencioso
-  }
-}
-
 document.getElementById("btn-login-email").addEventListener("click", async () => {
   try {
     const email = fbEmailEl.value.trim();
     const password = fbPasswordEl.value;
     if (!email || !password) throw new Error("Completá email y contraseña.");
-    mostrar("Iniciando sesiÃ³nâ€¦", "");
+    mostrar("Iniciando sesión…", "");
     const r = await chrome.runtime.sendMessage({ action: "firebase:login", payload: { email, password } });
-    if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesiÃ³n.");
+    if (!r?.ok) throw new Error(r?.error || "No se pudo iniciar sesión.");
     await actualizarUILogin();
-    mostrar("SesiÃ³n iniciada y datos sincronizados desde la nube.", "ok");
+    mostrar("Sesión iniciada y datos sincronizados desde la nube.", "ok");
   } catch (e) {
     mostrar(`Error: ${e.message}`, "err");
   }
 });
-
 
 document.getElementById("btn-logout").addEventListener("click", async () => {
   try {
     const r = await chrome.runtime.sendMessage({ action: "firebase:logout" });
-    if (!r?.ok) throw new Error(r?.error || "No se pudo cerrar sesiÃ³n.");
+    if (!r?.ok) throw new Error(r?.error || "No se pudo cerrar sesión.");
     await actualizarUILogin();
-    mostrar("SesiÃ³n cerrada.", "ok");
+    mostrar("Sesión cerrada.", "ok");
   } catch (e) {
     mostrar(`Error: ${e.message}`, "err");
-  }
-});
-
-
-
-document.getElementById("limpiar").addEventListener("click", async () => {
-  try {
-    const response = await chrome.runtime.sendMessage({ action: "storage:clearMemory" });
-    if (!response?.ok) throw new Error(response?.error || "No se pudo limpiar la memoria.");
-    mostrar("Memoria limpiada.", "ok");
-  } catch (error) {
-    mostrar(`Error: ${error.message}`, "err");
-  }
-});
-
-document.getElementById("limpiar-sabana").addEventListener("click", async () => {
-  try {
-    const response = await chrome.runtime.sendMessage({ action: "storage:limpiarPatronesSabana" });
-    if (!response?.ok) throw new Error(response?.error || "No se pudo limpiar.");
-    mostrar("Patrones de sábana eliminados.", "ok");
-  } catch (error) {
-    mostrar(`Error: ${error.message}`, "err");
   }
 });
 
@@ -177,10 +142,10 @@ document.getElementById("guardar-tg").addEventListener("click", async () => {
 
 document.getElementById("probar-tg").addEventListener("click", async () => {
   try {
-    mostrar("Mandando mensaje de prueba a Telegram\u2026", "");
+    mostrar("Mandando mensaje de prueba a Telegram…", "");
     const r = await chrome.runtime.sendMessage({ action: "tg:probar" });
-    if (!r?.ok) throw new Error(r?.error || "Fall\u00f3 la prueba.");
-    mostrar("Mensaje de prueba enviado. Mir\u00e1 tu Telegram.", "ok");
+    if (!r?.ok) throw new Error(r?.error || "Falló la prueba.");
+    mostrar("Mensaje de prueba enviado. Mirá tu Telegram.", "ok");
   } catch (e) {
     mostrar(`Error: ${e.message}`, "err");
   }
@@ -188,9 +153,9 @@ document.getElementById("probar-tg").addEventListener("click", async () => {
 
 document.getElementById("chequear-ahora").addEventListener("click", async () => {
   try {
-    mostrar("Chequeando vencimientos y mandando alerta\u2026", "");
+    mostrar("Chequeando vencimientos y mandando alerta…", "");
     const r = await chrome.runtime.sendMessage({ action: "tg:chequearAhora" });
-    if (!r?.ok) throw new Error(r?.error || "Fall\u00f3 el chequeo.");
+    if (!r?.ok) throw new Error(r?.error || "Falló el chequeo.");
     mostrar(r.data?.mensaje || "Chequeo terminado.", "ok");
   } catch (e) {
     mostrar(`Error: ${e.message}`, "err");
@@ -199,79 +164,11 @@ document.getElementById("chequear-ahora").addEventListener("click", async () => 
 
 document.getElementById("chequear-visible").addEventListener("click", async () => {
   try {
-    mostrar("Abriendo pesta\u00f1a de Vencimientos para que veas el chequeo en vivo\u2026", "");
+    mostrar("Abriendo pestaña de Vencimientos para que veas el chequeo en vivo…", "");
     const r = await chrome.runtime.sendMessage({ action: "tg:chequearVisible" });
-    if (!r?.ok) throw new Error(r?.error || "Fall\u00f3 el chequeo.");
-    mostrar((r.data?.mensaje || "Chequeo terminado.") + " La pesta\u00f1a qued\u00f3 abierta para que la revises.", "ok");
+    if (!r?.ok) throw new Error(r?.error || "Falló el chequeo.");
+    mostrar((r.data?.mensaje || "Chequeo terminado.") + " La pestaña quedó abierta para que la revises.", "ok");
   } catch (e) {
-    mostrar(`Error: ${e.message}`, "err");
-  }
-});
-
-document.getElementById("exportar-mapeo").addEventListener("click", async () => {
-  try {
-    mostrar("Exportando mapeo…", "");
-    const r = await chrome.runtime.sendMessage({ action: "storage:exportarMapeo" });
-    if (!r) throw new Error("No se pudo leer el mapeo.");
-    const json = JSON.stringify(r, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const fecha = new Date().toISOString().slice(0, 10);
-    a.href = url;
-    a.download = `controldoc-mapeo-${fecha}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    const nPatrones = (r.patrones_sabana || []).length;
-    const nMapeos = Object.keys(r.mapeos_aprendidos || {}).length;
-    mostrar(`Exportado: ${nPatrones} patrón(es) de sábana, ${nMapeos} mapeo(s) aprendido(s).`, "ok");
-  } catch (e) {
-    mostrar(`Error: ${e.message}`, "err");
-  }
-});
-
-document.getElementById("importar-mapeo-btn").addEventListener("click", () => {
-  document.getElementById("importar-mapeo-input").click();
-});
-
-document.getElementById("importar-mapeo-input").addEventListener("change", async (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-  try {
-    mostrar("Importando mapeo…", "");
-    const texto = await file.text();
-    const datos = JSON.parse(texto);
-    const r = await chrome.runtime.sendMessage({ action: "storage:importarMapeo", payload: datos });
-    if (!r?.ok) throw new Error(r?.error || "No se pudo importar.");
-    mostrar(`Importado: ${r.data.patrones} patrón(es) de sábana, ${r.data.mapeos} mapeo(s).`, "ok");
-  } catch (e) {
-    mostrar(`Error al importar: ${e.message}`, "err");
-  }
-  e.target.value = "";
-});
-
-document.getElementById("cf-guardar-baseurl").addEventListener("click", async () => {
-  try {
-    const baseUrl = (cfBaseUrlEl?.value || "").trim();
-    if (!baseUrl) throw new Error("Completá la Base URL de ControlStorage.");
-    const r = await chrome.runtime.sendMessage({ action: "controlfile:setBaseUrl", payload: { baseUrl } });
-    if (!r?.ok) throw new Error(r?.error || "No se pudo guardar la Base URL.");
-    mostrar("ControlStorage Base URL guardada.", "ok");
-  } catch (e) {
-    mostrar(`Error: ${e.message}`, "err");
-  }
-});
-
-document.getElementById("cf-debug-upload").addEventListener("click", async () => {
-  try {
-    if (cfDebugOutputEl) cfDebugOutputEl.value = "";
-    mostrar("Probando subida a ControlStorage...", "");
-    const r = await chrome.runtime.sendMessage({ action: "controlfile:debugUpload" });
-    if (!r?.ok) throw new Error(r?.error || "Falló la subida de debug.");
-    if (cfDebugOutputEl) cfDebugOutputEl.value = JSON.stringify(r.data || {}, null, 2);
-    mostrar("Debug OK: subida remota completada.", "ok");
-  } catch (e) {
-    if (cfDebugOutputEl) cfDebugOutputEl.value = `ERROR\n${e.message}`;
     mostrar(`Error: ${e.message}`, "err");
   }
 });
