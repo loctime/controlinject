@@ -3426,11 +3426,13 @@ async function tgProcesarYSubirPDF(cfg, base64, nombreArchivo) {
       .join("\n");
 
     const partes = [`✅ <b>Subida completada en ${tTotal}s</b>\n`];
-    partes.push(`✅ Subidos exitosamente: <b>${res.okCount}</b> <tg-spoiler>\n${listaSubidos}\n</tg-spoiler>`);
+    partes.push(`✅ Subidos exitosamente: <b>${res.okCount}</b>`);
+    partes.push(`<tg-spoiler>${listaSubidos}</tg-spoiler>`);
 
     if (res.errCount > 0) {
       const listaErrores = (res.errores || []).map(e => `• ${escapeHtml(e)}`).join("\n");
-      partes.push(`❌ Errores: <b>${res.errCount}</b> <tg-spoiler>\n${listaErrores}\n</tg-spoiler>`);
+      partes.push(`❌ Errores: <b>${res.errCount}</b>`);
+      partes.push(`<tg-spoiler>${listaErrores}</tg-spoiler>`);
     }
 
     if (bloquesDescartados.length) {
@@ -3441,7 +3443,8 @@ async function tgProcesarYSubirPDF(cfg, base64, nombreArchivo) {
           return `• ${escapeHtml(persona)} (faltan ${faltan} pág${faltan > 1 ? "s" : ""})`;
         })
         .join("\n");
-      partes.push(`⚠️ Descartados por incompletos: <b>${bloquesDescartados.length}</b> <tg-spoiler>\n${listaDescartados}\n</tg-spoiler>`);
+      partes.push(`⚠️ Descartados por incompletos: <b>${bloquesDescartados.length}</b>`);
+      partes.push(`<tg-spoiler>${listaDescartados}</tg-spoiler>`);
     }
 
     partes.push(`⏳ Pendientes en CD: <b>${pendientesCD}</b>`);
