@@ -1323,34 +1323,21 @@ async function tgReprogramarAlarma() {
   try { await chrome.alarms.clear(ALARMA_TG); } catch {}
   try { await chrome.alarms.clear(ALARMA_TG_POLL); } catch {}
   if (cfg.activo && cfg.token && cfg.chatId) {
-    chrome.alarms.create(ALARMA_TG, {
-      delayInMinutes: 1,
-      periodInMinutes: cfg.frecuencia
-    });
+    // ALARMA_TG (chequeo automático de vencimientos) deshabilitado.
+    // Usar /chequear desde Telegram para revisar manualmente.
     // Poll de comandos del usuario (cada 1 min)
     chrome.alarms.create(ALARMA_TG_POLL, {
       delayInMinutes: 0.2,
       periodInMinutes: 1
     });
-    console.log(`[MAU] Alarma Telegram programada cada ${cfg.frecuencia} min. Poll de comandos cada 1 min.`);
+    console.log(`[MAU] Poll de comandos activado cada 1 min. Chequeo automático de vencimientos deshabilitado.`);
   } else {
     console.log("[MAU] Alarma Telegram apagada.");
   }
 }
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === ALARMA_TG) {
-    try {
-      const cfg = await tgGetConfig();
-      if (tgEnSilencio(cfg.silencioDesde, cfg.silencioHasta, new Date())) {
-        console.log(`[MAU] Silencio activo (${cfg.silencioDesde}-${cfg.silencioHasta}). No mando alerta.`);
-        return;
-      }
-      await tgChequearYAvisar({ forzarEnvio: false });
-    } catch (e) {
-      console.warn("[MAU] Error en chequeo automático:", e);
-    }
-  }
+  // ALARMA_TG deshabilitada — chequeo de vencimientos solo por /chequear manual.
   if (alarm.name === ALARMA_TG_POLL) {
     try {
       await tgProcesarComandos();
@@ -1787,10 +1774,136 @@ async function tgManejarComando(cfg, texto) {
     return;
   }
 
+  if (limpio === "estado" || limpio === "status" || limpio === "config") {
+    try {
+      await tgEnviarMensaje(cfg.token, cfg.chatId, await tgArmarMensajeEstado(cfg));
+    } catch (e) {
+      await tgEnviarMensaje(cfg.token, cfg.chatId, `❌ Error al leer estado: ${e.message || e}`);
+    }
+    return;
+  }
+
   // Texto no reconocido — mostrar opciones
   await tgEnviarMensaje(cfg.token, cfg.chatId,
     `No entendí ese mensaje.\n\n` + tgMensajeAyuda()
   );
+}
+
+async function tgArmarMensajeEstado(cfg) {
+  const data = await chrome.storage.local.get([
+    KEY_API_KEY, KEY_MODELO, KEY_AI_PROXY_URL,
+    KEY_CD_USER, KEY_CD_PASS,
+    KEY_TG_TOKEN, KEY_TG_CHATID, KEY_TG_ACTIVO,
+    KEY_PATRONES_SABANA, KEY_FB_AUTH
+  ]);
+
+  const ok = "✅";
+  const no = "❌";
+  const partes = ["<b>🔧 Estado de la extensión</b>\n"];
+
+  // ── Claude / IA ──
+  // La extensión siempre usa el proxy hardcodeado; la clave en storage es ignorada.
+  const modelo = data[KEY_MODELO] || MODELO_DEFAULT;
+  partes.push("<b>🤖 Claude API</b>");
+  partes.push(`• Proxy: ${ok} <code>${escapeHtml(IA_PROXY_URL_HARDCODED)}</code>`);
+  partes.push(`• Modelo: <code>${escapeHtml(modelo)}</code>`);
+
+  // ── controldocumentario.com ──
+  const cdUser = data[KEY_CD_USER] || "";
+  const cdPass = data[KEY_CD_PASS] || "";
+  partes.push("\n<b>🌐 controldocumentario.com</b>");
+  partes.push(`• Usuario: ${cdUser ? ok + " " + escapeHtml(cdUser) : no + " no guardado"}`);
+  partes.push(`• Contraseña: ${cdPass ? ok + " guardada" : no + " no guardada"}`);
+
+  // ── Telegram ──
+  const tgToken = data[KEY_TG_TOKEN] || "";
+  const tgChatId = data[KEY_TG_CHATID] || "";
+  const tgActivo = data[KEY_TG_ACTIVO];
+  partes.push("\n<b>📱 Telegram</b>");
+  if (tgToken) {
+    const parts = tgToken.split(":");
+    const tokenMask = (parts[0] || "").slice(0, 6) + ":…" + tgToken.slice(-4);
+    partes.push(`• Token: ${ok} <code>${escapeHtml(tokenMask)}</code>`);
+  } else {
+    partes.push(`• Token: ${no} no configurado`);
+  }
+  partes.push(`• Chat ID: ${tgChatId ? ok + " <code>" + escapeHtml(String(tgChatId)) + "</code>" : no + " no configurado"}`);
+  partes.push(`• Estado: ${tgActivo ? ok + " activo" : no + " inactivo"}`);
+
+  // ── Mapeos ──
+  const patrones = (data[KEY_PATRONES_SABANA] || []).filter(p => p.nombre);
+  partes.push(`\n<b>📋 Mapeos en storage: ${patrones.length}</b>`);
+  if (patrones.length) {
+    for (const p of patrones) {
+      const nb = (p.bloquesModal || p.bloques || []).length;
+      partes.push(`• ${escapeHtml(p.nombre)} — ${nb} bloque(s)`);
+    }
+
+    // Verificar imágenes en IndexedDB desde un tab de controldocumentario.com
+    try {
+      const todasLasTabs = await chrome.tabs.query({});
+      const tabCD = todasLasTabs.find(t => /controldocumentario\.com/i.test(t.url || ""));
+      if (tabCD) {
+        const [{ result: imgCheck } = {}] = await chrome.scripting.executeScript({
+          target: { tabId: tabCD.id },
+          world: "MAIN",
+          func: async (nombres) => {
+            const abrirDB = () => new Promise((res, rej) => {
+              const r = indexedDB.open("mau_imagedb", 1);
+              r.onsuccess = e => res(e.target.result);
+              r.onerror = e => rej(e.target.error);
+              r.onupgradeneeded = e => {
+                if (!e.target.result.objectStoreNames.contains("patron_imagenes"))
+                  e.target.result.createObjectStore("patron_imagenes", { keyPath: "nombre" });
+              };
+            });
+            const leer = (db, nombre) => new Promise(res => {
+              const r = db.transaction("patron_imagenes", "readonly").objectStore("patron_imagenes").get(nombre);
+              r.onsuccess = e => res(e.target.result || null);
+              r.onerror = () => res(null);
+            });
+            try {
+              const db = await abrirDB();
+              const resultados = {};
+              for (const nombre of nombres) {
+                const r = await leer(db, nombre);
+                if (!r) { resultados[nombre] = "sin_datos"; continue; }
+                const tieneImg = (r.imagenesPorBloque && Object.keys(r.imagenesPorBloque).length > 0)
+                  || (Array.isArray(r.imagenes) && r.imagenes.length > 0);
+                const tieneBloques = Array.isArray(r.bloques) && r.bloques.length > 0;
+                resultados[nombre] = tieneImg && tieneBloques ? "ok" : tieneImg ? "sin_bloques" : "sin_imagenes";
+              }
+              db.close();
+              return resultados;
+            } catch { return null; }
+          },
+          args: [patrones.map(p => p.nombre)]
+        });
+        if (imgCheck) {
+          partes.push("\n<b>🖼 Imágenes en IndexedDB:</b>");
+          for (const [nombre, estado] of Object.entries(imgCheck)) {
+            const icono = estado === "ok" ? ok : estado === "sin_bloques" ? "⚠️" : no;
+            const detalle = estado === "ok" ? "imágenes ✓" : estado === "sin_bloques" ? "imágenes pero sin bloques" : "SIN IMÁGENES";
+            partes.push(`• ${escapeHtml(nombre)}: ${icono} ${detalle}`);
+          }
+        } else {
+          partes.push("\n⚠️ <i>No se pudo leer IndexedDB (error interno)</i>");
+        }
+      } else {
+        partes.push("\n⚠️ <i>IndexedDB no verificado — abrí controldocumentario.com primero</i>");
+      }
+    } catch (e) {
+      partes.push(`\n⚠️ <i>Error verificando IndexedDB: ${escapeHtml(e.message || String(e))}</i>`);
+    }
+  }
+
+  // ── Firebase ──
+  const fbAuth = data[KEY_FB_AUTH];
+  if (fbAuth?.email) {
+    partes.push(`\n<b>☁️ Firebase:</b> ${ok} ${escapeHtml(fbAuth.email)}`);
+  }
+
+  return partes.join("\n");
 }
 
 function tgMensajeAyuda() {
@@ -1800,6 +1913,7 @@ function tgMensajeAyuda() {
     "📄 <b>Mandame un PDF</b> — lo proceso y lo subo automáticamente",
     "📤 /unico — subir un archivo a un requerido específico",
     "🔔 /chequear — ver vencimientos ahora",
+    "🔧 /estado — ver cuentas y mapeos conectados",
     "❓ /ayuda — mostrar este mensaje"
   ].join("\n");
 }
@@ -1818,22 +1932,23 @@ chrome.runtime.onInstalled.addListener(() => { tgReprogramarAlarma().catch(() =>
 async function tgExtraerVencimientosDesdeTab(umbralDias, _ignorado, visible = false) {
   const url = "https://controldocumentario.com/Vencimientos.aspx?menu=11";
 
-  // 1) Si ya hay una pestaña abierta en Vencimientos.aspx (o cualquier pantalla del sitio),
-  //    usarla y no abrir una nueva. Si no, crear una nueva.
+  // 1) Solo reusar una pestaña si ya está en Vencimientos.aspx.
+  //    NO tomar Bandeja.aspx ni otras páginas — podrían estar procesando documentos.
+  //    Si no hay pestaña de vencimientos, abrir una nueva (se cierra al terminar).
   let tabId = null;
   let tabReusada = false;
   try {
     const todasLasTabs = await chrome.tabs.query({});
     const candidatas = todasLasTabs.filter(t => /controldocumentario\.com/i.test(t.url || ""));
-    // Preferimos una que ya esté en Vencimientos.aspx
+    // Solo reusar si ya está en Vencimientos — nunca navegar Bandeja.aspx
     const enVenc = candidatas.find(t => /vencimientos\.aspx/i.test(t.url || ""));
-    const elegida = enVenc || candidatas[0];
+    const elegida = enVenc;
     if (elegida && elegida.id) {
       tabId = elegida.id;
       tabReusada = true;
-      console.log("[MAU] Pestaña existente encontrada:", elegida.url);
+      console.log("[MAU] Pestaña de vencimientos encontrada:", elegida.url);
     } else {
-      console.log("[MAU] No se encontró pestaña de controldocumentario.com. Candidatas:", candidatas.length, "Total tabs:", todasLasTabs.length);
+      console.log("[MAU] No se encontró pestaña de vencimientos. Se abrirá una nueva.");
     }
   } catch (_e) {
     console.warn("[MAU] Error buscando pestañas existentes:", _e);
@@ -3366,16 +3481,57 @@ async function tgProcesarYSubirPDF(cfg, base64, nombreArchivo) {
       return;
     }
 
-    // 2) Cargar referencias del mapeo
+    // 2) Cargar referencias del mapeo (descarga desde Cloudflare si IndexedDB está vacío)
     const dataPatrones = await chrome.storage.local.get(KEY_PATRONES_SABANA);
     const patrones = (dataPatrones[KEY_PATRONES_SABANA] || []).filter(p => p.nombre);
     if (!patrones.length) {
       await log(`❌ No tenés ningún mapeo guardado. Hacé un mapeo primero desde "Aprender" en la extensión.`);
       return;
     }
+
+    // Intentar sincronizar imágenes desde Cloudflare hacia IndexedDB (igual que el panel en "Trabajar")
+    let sincOk = 0, sincFail = 0;
+    for (const p of patrones) {
+      try {
+        const remoto = await cfDescargarReferenciaPatronRemoto(p.nombre, p.controlStorageRef || null);
+        if (remoto?.imagenes?.length && remoto?.bloques?.length) {
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            world: "MAIN",
+            func: async (nombre, datos) => {
+              const abrirDB = () => new Promise((res, rej) => {
+                const r = indexedDB.open("mau_imagedb", 1);
+                r.onsuccess = e => res(e.target.result);
+                r.onerror = e => rej(e.target.error);
+                r.onupgradeneeded = e => {
+                  if (!e.target.result.objectStoreNames.contains("patron_imagenes"))
+                    e.target.result.createObjectStore("patron_imagenes", { keyPath: "nombre" });
+                };
+              });
+              const db = await abrirDB();
+              await new Promise((res, rej) => {
+                const tx = db.transaction("patron_imagenes", "readwrite");
+                tx.objectStore("patron_imagenes").put({ nombre, ...datos, guardadoEn: Date.now() });
+                tx.oncomplete = res;
+                tx.onerror = e => rej(e.target.error);
+              });
+              db.close();
+            },
+            args: [p.nombre, { imagenes: remoto.imagenes, bloques: remoto.bloques, imagenesPorBloque: remoto.imagenesPorBloque || null }]
+          });
+          sincOk++;
+        }
+      } catch (e) {
+        console.warn(`[MAU][TG] No se pudo sincronizar imágenes remotas de "${p.nombre}":`, e);
+        sincFail++;
+      }
+    }
+    if (sincOk > 0) console.log(`[MAU][TG] Imágenes sincronizadas: ${sincOk} patrón(es) desde Cloudflare.`);
+    if (sincFail > 0 && sincOk === 0) console.warn(`[MAU][TG] No se pudieron sincronizar imágenes (${sincFail} fallas). Usando IndexedDB local.`);
+
     const referenciasDisponibles = await tgLeerReferenciasConImagenes(tabId, patrones.map(p => p.nombre));
     if (!referenciasDisponibles.length) {
-      await log(`❌ Hacé un mapeo primero desde "Aprender" en la extensión.`);
+      await log(`❌ No hay imágenes de referencia para el mapeo. Re-hacé el mapeo desde "Aprender" en la extensión.`);
       return;
     }
 
